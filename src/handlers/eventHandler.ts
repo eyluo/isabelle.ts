@@ -9,8 +9,10 @@ import { BotEvent } from '../types';
  * To add a new event: create a .ts file in src/events/ that exports
  * `name` (string), optional `once` (boolean), and `execute` (function).
  */
-export function loadEvents(client: Client): void {
-  const eventsDir = path.join(__dirname, '..', 'events');
+export function loadEvents(
+  client: Client,
+  eventsDir: string = path.join(__dirname, '..', 'events'),
+): void {
   const eventFiles = fs.readdirSync(eventsDir)
     .filter(file => file.endsWith('.js') && !file.endsWith('.d.ts'));
 

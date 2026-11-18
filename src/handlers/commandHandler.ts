@@ -9,8 +9,10 @@ import { Command, IsabelleClient } from '../types';
  * `data` (SlashCommandBuilder) and `execute` (async function).
  * It will be picked up automatically on next restart.
  */
-export function loadCommands(client: IsabelleClient): void {
-  const commandsDir = path.join(__dirname, '..', 'commands');
+export function loadCommands(
+  client: IsabelleClient,
+  commandsDir: string = path.join(__dirname, '..', 'commands'),
+): void {
   const commandFiles = fs.readdirSync(commandsDir)
     .filter(file => file.endsWith('.js') && !file.endsWith('.d.ts'));
 
