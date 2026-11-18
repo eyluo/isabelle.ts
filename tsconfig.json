@@ -1,18 +1,14 @@
 {
     "compilerOptions": {
-        "module": "commonjs",
-        "moduleResolution": "node",
-        "target": "es2016",
-        "lib": ["es6", "dom"],
+        "module": "nodenext",
+        "moduleResolution": "nodenext",
+        "target": "es2022",
+        "lib": ["es2022"],
         "outDir": "dist",
         "rootDir": "src",
         "sourceMap": true,
         "strict": true,
         "types": ["node"],
-        "typeRoots": ["node_modules/@types"],
-        "experimentalDecorators": true,
-        "emitDecoratorMetadata": true,
-        "resolveJsonModule": true,
         "esModuleInterop": true,
         "skipLibCheck": true
     },

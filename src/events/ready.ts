@@ -1,9 +1,8 @@
-import { Client } from 'discord.js';
-import { BotEvent } from '../types';
+import { Client, Events } from 'discord.js';
 
-export const name = 'ready';
+export const name = Events.ClientReady;
 export const once = true;
 
-export const execute: BotEvent['execute'] = (client: Client) => {
-  console.log(`isabelle.ts is ready to roll! Logged in as ${client.user?.tag}`);
-};
+export function execute(client: Client<true>): void {
+  console.log(`isabelle.ts is ready to roll! Logged in as ${client.user.tag}`);
+}

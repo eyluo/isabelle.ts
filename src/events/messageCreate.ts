@@ -1,6 +1,6 @@
-import { Message } from 'discord.js';
+import { Events, Message } from 'discord.js';
 
-export const name = 'messageCreate';
+export const name = Events.MessageCreate;
 
 export async function execute(message: Message): Promise<void> {
   if (message.author.bot) return;

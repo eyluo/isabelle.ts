@@ -10,13 +10,15 @@ description: >-
 
 ## Project Quick Reference
 
-- **Runtime**: Node.js 18+ (CommonJS, ES2016)
-- **Discord lib**: discord.js v13.3.1
-- **Config file**: `.env.json` (contains Discord token, Reddit creds, and mutable state)
-- **Build**: `npm run build` (outputs to `dist/`)
+- **Runtime**: Node.js 20+ (CommonJS output, ES2022; uses built-in `fetch`)
+- **Discord lib**: discord.js v14 (only runtime dependency)
+- **Config file**: `.env.json` (contains Discord token, Reddit app creds, and mutable state)
+- **Build**: `npm run build` (TypeScript 7, outputs to `dist/`)
 - **Run**: `npm start` (runs `node dist/index.js`)
 - **Deploy commands**: `npm run deploy` (registers slash commands with Discord API)
-- **External APIs**: Discord, Reddit (snoowrap)
+- **External APIs**: Discord, Reddit (app-only OAuth via `src/util/reddit.ts`; no account password needed)
+- **Discord portal**: the **Message Content** privileged intent must be enabled
+  (Bot → Privileged Gateway Intents) or the bot fails to log in with "Used disallowed intents"
 
 ## Prerequisites (on the Pi)
 
@@ -78,5 +80,4 @@ sudo systemctl start isabelle.service
 ## Security Notes
 
 - `.env.json` has plaintext secrets — keep it out of version control
-- The `dotenv` package is a dependency but is unused; consider migrating secrets to a `.env` file
 - Regenerate all tokens/credentials before deploying to a new environment

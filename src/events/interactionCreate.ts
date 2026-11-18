@@ -1,10 +1,10 @@
-import { Interaction } from 'discord.js';
+import { Events, Interaction, MessageFlags } from 'discord.js';
 import { IsabelleClient } from '../types';
 
-export const name = 'interactionCreate';
+export const name = Events.InteractionCreate;
 
 export async function execute(interaction: Interaction): Promise<void> {
-  if (!interaction.isCommand()) return;
+  if (!interaction.isChatInputCommand()) return;
 
   const client = interaction.client as IsabelleClient;
   const command = client.commands.get(interaction.commandName);
@@ -17,8 +17,8 @@ export async function execute(interaction: Interaction): Promise<void> {
     console.error(`Error executing /${interaction.commandName}:`, error);
     const reply = {
       content: 'There was an error while executing this command!',
-      ephemeral: true,
-    };
+      flags: MessageFlags.Ephemeral,
+    } as const;
     if (interaction.replied || interaction.deferred) {
       await interaction.followUp(reply);
     } else {
