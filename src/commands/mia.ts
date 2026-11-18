@@ -1,65 +1,69 @@
-const { SlashCommandBuilder } = require('@discordjs/builders');
+import { SlashCommandBuilder } from '@discordjs/builders';
+import { CommandInteraction, TextChannel } from 'discord.js';
+import { loadConfig, saveConfig } from '../config';
 
-const fs = require('fs');
 const snoowrap = require('snoowrap');
-const envPath = '.env.json';
-const dataJson = require('../../' + envPath);
 
+// Lazy-initialized Reddit client (created on first /mia invocation)
+let rClient: any = null;
 
-const rClient = new snoowrap({
-    userAgent: dataJson.auth.reddit.userAgent,
-    clientId: dataJson.auth.reddit.clientID,
-    clientSecret: dataJson.auth.reddit.clientSecret,
-    username: dataJson.auth.reddit.username,
-    password: dataJson.auth.reddit.password,
-});
+function getRedditClient(): any {
+  if (!rClient) {
+    const config = loadConfig();
+    rClient = new snoowrap({
+      userAgent: config.auth.reddit.userAgent,
+      clientId: config.auth.reddit.clientID,
+      clientSecret: config.auth.reddit.clientSecret,
+      username: config.auth.reddit.username,
+      password: config.auth.reddit.password,
+    });
+  }
+  return rClient;
+}
 
-module.exports = {
-    data: new SlashCommandBuilder()
-        .setName('mia')
-        .setDescription('Checks on the newest chapter of Made in Abyss'),
+export const data = new SlashCommandBuilder()
+  .setName('mia')
+  .setDescription('Checks on the newest chapter of Made in Abyss');
 
-    // checks if any of the stickied posts on /r/MadeInAbyss contain the
-    // string for the new chapter number.
-    async execute(interaction) {
-        const numStickyPosts = 2;
-        const chapterToCheck = dataJson.data.madeInAbyss.latestChapter;
+/**
+ * Checks if any stickied posts on r/MadeInAbyss contain the next
+ * chapter number. If found, posts a link and creates a discussion thread.
+ */
+export async function execute(interaction: CommandInteraction): Promise<void> {
+  const config = loadConfig();
+  const chapterToCheck = config.data.madeInAbyss.latestChapter;
+  const numStickyPosts = 2;
 
+  for (let i = 0; i < numStickyPosts; i++) {
+    const stickyPost = await getRedditClient()
+      .getSubreddit('MadeInAbyss')
+      .getSticky({ num: i + 1 });
 
-        for (let i = 0; i < numStickyPosts; i++) {
-            let stickyPost = await rClient.getSubreddit('MadeInAbyss')
-                .getSticky({ num: i + 1 });
-            let chapterToCheckAvailable = stickyPost.title
-                .includes(chapterToCheck.toString());
-            if (chapterToCheckAvailable) {
-                await interaction.reply(
-                    `Chapter ${chapterToCheck} available! ` +
-                    `Link here: ${stickyPost.url}`);
-                let miaChannel = await interaction.guild.channels.cache.get(
-                    dataJson.data.madeInAbyss.channelID);
-                const thread = await miaChannel.threads.create({
-                    name: `Made in Abyss Chapter ${chapterToCheck} Discussion`,
-                });
+    if (stickyPost.title.includes(chapterToCheck.toString())) {
+      await interaction.reply(
+        `Chapter ${chapterToCheck} available! Link here: ${stickyPost.url}`
+      );
 
-                dataJson.data.madeInAbyss.latestChapter++;
+      // Create a discussion thread in the designated channel
+      const miaChannel = interaction.guild?.channels.cache.get(
+        config.data.madeInAbyss.channelID
+      ) as TextChannel | undefined;
 
-                fs.writeFile(
-                    envPath,
-                    JSON.stringify(dataJson, null, 4),
-                    function writeJSON(err) {
-                        if (err) {
-                            return console.log(err);
-                        }
-                        console.log(JSON.stringify(dataJson));
-                        console.log('writing to ' + envPath);
-                    }
-                );
+      if (miaChannel) {
+        await miaChannel.threads.create({
+          name: `Made in Abyss Chapter ${chapterToCheck} Discussion`,
+        });
+      }
 
-                return;
-            }
-        }
+      // Persist the updated chapter number
+      config.data.madeInAbyss.latestChapter++;
+      saveConfig(config);
 
-        await interaction.reply(
-            `Chapter ${chapterToCheck} is not available yet...`);
-    },
-};
+      return;
+    }
+  }
+
+  await interaction.reply(
+    `Chapter ${chapterToCheck} is not available yet...`
+  );
+}

@@ -1,4 +1,3 @@
 node_modules
-src/*.js*
-src/commands/*.js*
+dist
 .env.json
