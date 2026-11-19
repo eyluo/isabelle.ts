@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { BotConfig } from './types';
@@ -11,7 +12,17 @@ export function loadConfig(configPath: string = CONFIG_PATH): BotConfig {
   return JSON.parse(raw);
 }
 
-/** Writes the config back to .env.json (used by /mia to persist chapter state). */
+/**
+ * Atomically writes the config back to .env.json via a temp file + rename
+ * so a mid-write crash cannot truncate or corrupt credentials/state.
+ */
 export function saveConfig(config: BotConfig, configPath: string = CONFIG_PATH): void {
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 4));
+  const tmpPath = `${configPath}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  try {
+    fs.writeFileSync(tmpPath, JSON.stringify(config, null, 4), { mode: 0o600 });
+    fs.renameSync(tmpPath, configPath);
+  } catch (error) {
+    fs.rmSync(tmpPath, { force: true });
+    throw error;
+  }
 }

@@ -10,22 +10,27 @@ export function makeConfig(overrides: Partial<BotConfig['data']['madeInAbyss']> 
   return {
     auth: {
       discord: { token: 'fake-token', clientID: 'client-1', guildID: 'guild-1' },
-      reddit: { clientID: 'reddit-id', clientSecret: 'reddit-secret', userAgent: 'isabelle-tests' },
     },
     data: {
-      madeInAbyss: { channelID: 'mia-channel', latestChapter: 62, ...overrides },
+      madeInAbyss: { channelID: 'mia-channel', latestChapter: 74, ...overrides },
     },
   };
 }
 
 /** Fake ChatInputCommandInteraction. Tracks replied/deferred like the real one. */
 export function makeInteraction(opts: { commandName?: string; channels?: Map<string, unknown> } = {}) {
+  const channels = opts.channels ?? new Map();
   const interaction = {
     commandName: opts.commandName ?? 'ping',
     replied: false,
     deferred: false,
-    client: { commands: new Map() },
-    guild: { channels: { cache: opts.channels ?? new Map() } },
+    client: {
+      commands: new Map(),
+      channels: {
+        fetch: vi.fn(async (id: string) => channels.get(id) ?? null),
+      },
+    },
+    guild: { channels: { cache: channels } },
     isChatInputCommand: () => true,
     reply: vi.fn(async () => { interaction.replied = true; }),
     deferReply: vi.fn(async () => { interaction.deferred = true; }),

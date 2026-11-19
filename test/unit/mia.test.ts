@@ -1,105 +1,181 @@
 import { ChannelType } from 'discord.js';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { MangaDexChapter } from '../../src/util/mangadex';
 import { makeConfig, makeInteraction } from '../helpers';
 
-vi.mock('../../src/config', () => ({ loadConfig: vi.fn(), saveConfig: vi.fn() }));
-vi.mock('../../src/util/reddit', () => ({ getSticky: vi.fn() }));
+const { loadConfig, saveConfig, getLatestChapters } = vi.hoisted(() => ({
+  loadConfig: vi.fn(),
+  saveConfig: vi.fn(),
+  getLatestChapters: vi.fn(),
+}));
 
-import { loadConfig, saveConfig } from '../../src/config';
-import { getSticky } from '../../src/util/reddit';
-import { execute } from '../../src/commands/mia';
+vi.mock('../../src/config', () => ({ loadConfig, saveConfig }));
+vi.mock('../../src/util/mangadex', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/util/mangadex')>();
+  return { ...actual, getLatestChapters };
+});
 
-const post = (title: string) => ({ title, url: `https://example.com/${encodeURIComponent(title)}`, permalink: '/r/x' });
+let execute: typeof import('../../src/commands/mia').execute;
+
+const chapter = (
+  num: number,
+  overrides: Partial<MangaDexChapter> = {},
+): MangaDexChapter => ({
+  id: `id-${num}`,
+  chapter: num,
+  title: `Title ${num}`,
+  volume: '15',
+  url: `https://mangadex.org/chapter/id-${num}`,
+  publishAt: '2026-08-21T07:00:00+00:00',
+  ...overrides,
+});
 
 function makeMiaChannel(type = ChannelType.GuildText) {
-  return { type, threads: { create: vi.fn(async () => ({})) } };
+  return {
+    type,
+    send: vi.fn(async () => ({})),
+    threads: { create: vi.fn(async () => ({})) },
+  };
 }
 
 describe('/mia', () => {
-  beforeEach(() => {
-    // Drop any queued mockResolvedValueOnce results from the previous test.
-    vi.mocked(getSticky).mockReset();
-    vi.mocked(loadConfig).mockReturnValue(makeConfig({ latestChapter: 62 }));
+  beforeEach(async () => {
+    vi.resetModules();
+    loadConfig.mockReset();
+    saveConfig.mockReset();
+    getLatestChapters.mockReset();
+    loadConfig.mockReturnValue(makeConfig({ latestChapter: 74 }));
+    ({ execute } = await import('../../src/commands/mia'));
   });
 
-  it('defers before calling Reddit, to stay inside the 3s reply window', async () => {
-    vi.mocked(getSticky).mockResolvedValue(null);
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('defers before calling MangaDex, to stay inside the 3s reply window', async () => {
+    getLatestChapters.mockResolvedValue([]);
     const interaction = makeInteraction();
+
     await execute(interaction as any);
 
     expect(interaction.deferReply).toHaveBeenCalledOnce();
     expect(interaction.deferReply.mock.invocationCallOrder[0])
-      .toBeLessThan(vi.mocked(getSticky).mock.invocationCallOrder[0]);
+      .toBeLessThan(getLatestChapters.mock.invocationCallOrder[0]);
   });
 
-  it('announces the chapter, opens a thread and bumps latestChapter when found', async () => {
-    vi.mocked(getSticky).mockResolvedValueOnce(post('Chapter 62 is out!'));
+  it('announces the chapter with mentions disabled, opens a thread, and bumps latestChapter', async () => {
+    getLatestChapters.mockResolvedValue([chapter(74, { title: 'Just that' })]);
     const channel = makeMiaChannel();
     const interaction = makeInteraction({ channels: new Map([['mia-channel', channel]]) });
 
     await execute(interaction as any);
 
-    expect(interaction.editReply).toHaveBeenCalledExactlyOnceWith(
-      expect.stringMatching(/^Chapter 62 available! Link here: https:\/\/example\.com\//),
-    );
+    expect(interaction.editReply).toHaveBeenCalledExactlyOnceWith({
+      content: 'Chapter 74 (Just that) available! Link here: https://mangadex.org/chapter/id-74',
+      allowedMentions: { parse: [] },
+    });
+    expect(interaction.followUp).not.toHaveBeenCalled();
+    expect(channel.send).not.toHaveBeenCalled();
     expect(channel.threads.create).toHaveBeenCalledExactlyOnceWith({
-      name: 'Made in Abyss Chapter 62 Discussion',
+      name: 'Made in Abyss Chapter 74 Discussion',
     });
     expect(saveConfig).toHaveBeenCalledOnce();
-    expect(vi.mocked(saveConfig).mock.calls[0][0].data.madeInAbyss.latestChapter).toBe(63);
-    // Found in the first sticky, so the second is never requested.
-    expect(getSticky).toHaveBeenCalledExactlyOnceWith('MadeInAbyss', 1);
+    expect(saveConfig.mock.calls[0][0].data.madeInAbyss.latestChapter).toBe(75);
   });
 
-  it('checks the second sticky when the first does not match', async () => {
-    vi.mocked(getSticky)
-      .mockResolvedValueOnce(post('Weekly discussion thread'))
-      .mockResolvedValueOnce(post('Chapter 62'));
+  it('chunks large catch-up replies across editReply and followUp within 2000 chars', async () => {
+    loadConfig.mockReturnValue(makeConfig({ latestChapter: 1 }));
+    // 25 chapters with ~100-char titles easily exceed Discord's 2000-char limit.
+    const manyChapters = Array.from({ length: 25 }, (_, i) =>
+      chapter(i + 1, { title: `Long Chapter Title Number ${i + 1} ${'x'.repeat(60)}` }),
+    );
+    getLatestChapters.mockResolvedValue(manyChapters);
+    const channel = makeMiaChannel();
+    const interaction = makeInteraction({ channels: new Map([['mia-channel', channel]]) });
+
+    await execute(interaction as any);
+
+    expect(interaction.editReply).toHaveBeenCalledOnce();
+    expect(interaction.followUp).toHaveBeenCalled();
+    const allPayloads = [
+      interaction.editReply.mock.calls[0][0],
+      ...interaction.followUp.mock.calls.map((c) => c[0]),
+    ] as Array<{ content: string; allowedMentions: { parse: string[] } }>;
+    for (const payload of allPayloads) {
+      expect(payload.content.length).toBeLessThanOrEqual(2000);
+      expect(payload.allowedMentions).toEqual({ parse: [] });
+    }
+    expect(allPayloads.map((p) => p.content).join('\n').split('\n')).toHaveLength(25);
+    expect(saveConfig).toHaveBeenCalledOnce();
+    expect(saveConfig.mock.calls[0][0].data.madeInAbyss.latestChapter).toBe(26);
+  });
+
+  it('persists latestChapter and attempts remaining threads even if thread creation fails', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    getLatestChapters.mockResolvedValue([chapter(75), chapter(74)]);
+    const channel = makeMiaChannel();
+    channel.threads.create
+      .mockRejectedValueOnce(new Error('Missing Permissions'))
+      .mockResolvedValueOnce({});
+    const interaction = makeInteraction({ channels: new Map([['mia-channel', channel]]) });
+
+    await execute(interaction as any);
+
+    expect(saveConfig).toHaveBeenCalledOnce();
+    expect(saveConfig.mock.calls[0][0].data.madeInAbyss.latestChapter).toBe(76);
+    expect(channel.threads.create).toHaveBeenCalledTimes(2);
+    expect(err).toHaveBeenCalledWith(
+      '[mia] Failed to create discussion thread for chapter 74:',
+      expect.any(Error),
+    );
+  });
+
+  it('omits parentheses when a chapter has no title', async () => {
+    getLatestChapters.mockResolvedValue([chapter(74, { title: null })]);
     const interaction = makeInteraction({ channels: new Map([['mia-channel', makeMiaChannel()]]) });
 
     await execute(interaction as any);
 
-    expect(getSticky).toHaveBeenNthCalledWith(2, 'MadeInAbyss', 2);
-    expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining('Chapter 62 available!'));
-    expect(saveConfig).toHaveBeenCalledOnce();
+    expect(interaction.editReply).toHaveBeenCalledExactlyOnceWith({
+      content: 'Chapter 74 available! Link here: https://mangadex.org/chapter/id-74',
+      allowedMentions: { parse: [] },
+    });
   });
 
-  it('reports not available (and saves nothing) when no sticky matches', async () => {
-    vi.mocked(getSticky).mockResolvedValue(post('Chapter 61 discussion'));
+  it('reports not available (and saves nothing) when only older or non-integer chapters exist', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    getLatestChapters.mockResolvedValue([
+      chapter(74.5, { title: 'Volume Extras' }),
+      chapter(73, { title: 'Message' }),
+    ]);
     const interaction = makeInteraction();
 
     await execute(interaction as any);
 
-    expect(interaction.editReply).toHaveBeenCalledExactlyOnceWith('Chapter 62 is not available yet...');
+    expect(interaction.editReply).toHaveBeenCalledExactlyOnceWith('Chapter 74 is not available yet...');
     expect(saveConfig).not.toHaveBeenCalled();
-  });
-
-  it('handles a subreddit with no stickies', async () => {
-    vi.mocked(getSticky).mockResolvedValue(null);
-    const interaction = makeInteraction();
-
-    await execute(interaction as any);
-
-    expect(interaction.editReply).toHaveBeenCalledWith('Chapter 62 is not available yet...');
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('Non-integer chapter 74.5'));
   });
 
   it.each([
     ['missing', undefined],
     ['not a text channel', makeMiaChannel(ChannelType.GuildVoice)],
   ])('still announces and saves when the discussion channel is %s', async (_label, channel) => {
-    vi.mocked(getSticky).mockResolvedValueOnce(post('Chapter 62'));
+    getLatestChapters.mockResolvedValue([chapter(74)]);
     const channels = new Map(channel ? [['mia-channel', channel]] : []);
     const interaction = makeInteraction({ channels });
 
     await execute(interaction as any);
 
-    expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining('available!'));
+    expect(interaction.editReply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('Chapter 74') }),
+    );
     expect(saveConfig).toHaveBeenCalledOnce();
     if (channel) expect(channel.threads.create).not.toHaveBeenCalled();
   });
 
-  it('lets Reddit errors propagate so interactionCreate can report them', async () => {
-    vi.mocked(getSticky).mockRejectedValue(new Error('Reddit request failed: 503'));
+  it('lets MangaDex errors propagate so interactionCreate can report them', async () => {
+    getLatestChapters.mockRejectedValue(new Error('MangaDex request failed: 503'));
     await expect(execute(makeInteraction() as any)).rejects.toThrow('503');
     expect(saveConfig).not.toHaveBeenCalled();
   });

@@ -41,7 +41,7 @@ describe('config', () => {
     expect(loadConfig(file).data.madeInAbyss.latestChapter).toBe(63);
   });
 
-  it('keeps fields it does not know about (e.g. legacy Reddit username)', () => {
+  it('keeps fields it does not know about (e.g. legacy auth.reddit credentials)', () => {
     fs.writeFileSync(file, JSON.stringify({ ...makeConfig(), extra: { keep: true } }));
     saveConfig(loadConfig(file), file);
     expect(JSON.parse(fs.readFileSync(file, 'utf-8')).extra).toEqual({ keep: true });
@@ -51,5 +51,20 @@ describe('config', () => {
     expect(() => loadConfig(path.join(dir, 'nope.json'))).toThrow(/ENOENT/);
     fs.writeFileSync(file, '{ not json');
     expect(() => loadConfig(file)).toThrow(SyntaxError);
+  });
+
+  it('writes atomically with owner-only permissions and without leaving temporary files behind', () => {
+    saveConfig(makeConfig({ latestChapter: 75 }), file);
+    expect(fs.readdirSync(dir)).toEqual(['.env.json']);
+    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+  });
+
+  it('cleans up the temp file if renaming into place fails', () => {
+    // Pointing configPath at an existing directory causes renameSync to fail (EISDIR/ENOTEMPTY).
+    const dirTarget = path.join(dir, 'not-a-file');
+    fs.mkdirSync(dirTarget);
+
+    expect(() => saveConfig(makeConfig(), dirTarget)).toThrow();
+    expect(fs.readdirSync(dir)).toEqual(['not-a-file']);
   });
 });

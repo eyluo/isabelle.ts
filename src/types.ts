@@ -41,16 +41,15 @@ export interface BotConfig {
       clientID: string;
       guildID: string;
     };
-    reddit: {
-      clientID: string;
-      clientSecret: string;
-      userAgent: string;
-    };
   };
   data: {
     madeInAbyss: {
       channelID: string;
       latestChapter: number;
+      /** MangaDex manga UUID (defaults to Made in Abyss). */
+      mangaID?: string;
+      /** Background polling interval in hours (defaults to 24; set to 0 to disable). */
+      pollIntervalHours?: number;
     };
   };
 }
