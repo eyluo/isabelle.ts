@@ -17,10 +17,7 @@ vi.mock('../../src/util/mangadex', async (importOriginal) => {
 
 let mia: typeof import('../../src/util/mia');
 
-const chapter = (
-  num: number,
-  overrides: Partial<MangaDexChapter> = {},
-): MangaDexChapter => ({
+const chapter = (num: number, overrides: Partial<MangaDexChapter> = {}): MangaDexChapter => ({
   id: `id-${num}`,
   chapter: num,
   title: `Title ${num}`,
@@ -143,9 +140,7 @@ describe('checkAndAnnounceMia (proactive mode)', () => {
   it('persists already-sent chapters if channel.send fails mid-batch', async () => {
     getLatestChapters.mockResolvedValue([chapter(75), chapter(74)]);
     const channel = makeTextChannel();
-    channel.send
-      .mockResolvedValueOnce({})
-      .mockRejectedValueOnce(new Error('Discord 500'));
+    channel.send.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('Discord 500'));
 
     await expect(mia.checkAndAnnounceMia(makeFakeClient(channel))).rejects.toThrow('Discord 500');
 
@@ -156,11 +151,31 @@ describe('checkAndAnnounceMia (proactive mode)', () => {
   it('deduplicates multiple uploads using parsed timestamps across timezone offsets and invalid dates', async () => {
     // +09:00 at 15:00 equals 06:00Z, which is earlier than 07:00Z despite lexical string order.
     getLatestChapters.mockResolvedValue([
-      chapter(74, { id: 'invalid', url: 'https://mangadex.org/chapter/invalid', publishAt: 'not-a-date' }),
-      chapter(74, { id: 'utc', url: 'https://mangadex.org/chapter/utc', publishAt: '2026-08-21T07:00:00Z' }),
-      chapter(74, { id: 'jst-earlier', url: 'https://mangadex.org/chapter/jst-earlier', publishAt: '2026-08-21T15:00:00+09:00' }),
-      chapter(74, { id: 'also-invalid', url: 'https://mangadex.org/chapter/also-invalid', publishAt: '' }),
-      chapter(74, { id: 'later', url: 'https://mangadex.org/chapter/later', publishAt: '2026-08-22T00:00:00+00:00' }),
+      chapter(74, {
+        id: 'invalid',
+        url: 'https://mangadex.org/chapter/invalid',
+        publishAt: 'not-a-date',
+      }),
+      chapter(74, {
+        id: 'utc',
+        url: 'https://mangadex.org/chapter/utc',
+        publishAt: '2026-08-21T07:00:00Z',
+      }),
+      chapter(74, {
+        id: 'jst-earlier',
+        url: 'https://mangadex.org/chapter/jst-earlier',
+        publishAt: '2026-08-21T15:00:00+09:00',
+      }),
+      chapter(74, {
+        id: 'also-invalid',
+        url: 'https://mangadex.org/chapter/also-invalid',
+        publishAt: '',
+      }),
+      chapter(74, {
+        id: 'later',
+        url: 'https://mangadex.org/chapter/later',
+        publishAt: '2026-08-22T00:00:00+00:00',
+      }),
     ]);
     const channel = makeTextChannel();
 
@@ -181,8 +196,16 @@ describe('checkAndAnnounceMia (proactive mode)', () => {
 
     getLatestChapters.mockResolvedValue([
       chapter(74.7, { id: 'extra-74-7', title: null }),
-      chapter(74.5, { id: 'extra-74-5-later', title: 'Volume Extras', publishAt: '2026-08-22T00:00:00Z' }),
-      chapter(74.5, { id: 'extra-74-5', title: 'Volume Extras', publishAt: '2026-08-21T07:23:29Z' }),
+      chapter(74.5, {
+        id: 'extra-74-5-later',
+        title: 'Volume Extras',
+        publishAt: '2026-08-22T00:00:00Z',
+      }),
+      chapter(74.5, {
+        id: 'extra-74-5',
+        title: 'Volume Extras',
+        publishAt: '2026-08-21T07:23:29Z',
+      }),
       chapter(73.5, { id: 'old-extra', title: 'Old Extra' }),
     ]);
     const channel = makeTextChannel();
@@ -194,7 +217,8 @@ describe('checkAndAnnounceMia (proactive mode)', () => {
 
     expect(channel.send).toHaveBeenCalledTimes(2);
     expect(channel.send).toHaveBeenNthCalledWith(1, {
-      content: 'FYI: Extra chapter 74.5 (Volume Extras) available! Link here: https://mangadex.org/chapter/id-74.5',
+      content:
+        'FYI: Extra chapter 74.5 (Volume Extras) available! Link here: https://mangadex.org/chapter/id-74.5',
       allowedMentions: { parse: [] },
     });
     expect(channel.send).toHaveBeenNthCalledWith(2, {
@@ -237,9 +261,7 @@ describe('checkAndAnnounceMia (proactive mode)', () => {
   });
 
   it('ignores malformed announcedExtras values in config', async () => {
-    loadConfig.mockReturnValue(
-      makeConfig({ latestChapter: 75, announcedExtras: 'bad' as any }),
-    );
+    loadConfig.mockReturnValue(makeConfig({ latestChapter: 75, announcedExtras: 'bad' as any }));
     getLatestChapters.mockResolvedValue([chapter(74.5, { title: 'Volume Extras' })]);
     const channel = makeTextChannel();
 
@@ -277,22 +299,25 @@ describe('checkAndAnnounceMia (proactive mode)', () => {
     ['missing', undefined, false],
     ['not a text channel', makeTextChannel(ChannelType.GuildVoice), false],
     ['fetch throws', undefined, true],
-  ])('warns and does not advance latestChapter when proactive channel is %s', async (_label, channel, rejectFetch) => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    getLatestChapters.mockResolvedValue([chapter(74)]);
+  ])(
+    'warns and does not advance latestChapter when proactive channel is %s',
+    async (_label, channel, rejectFetch) => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      getLatestChapters.mockResolvedValue([chapter(74)]);
 
-    const result = await mia.checkAndAnnounceMia(makeFakeClient(channel, { rejectFetch }));
+      const result = await mia.checkAndAnnounceMia(makeFakeClient(channel, { rejectFetch }));
 
-    expect(result.chapters).toEqual([]);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('skipping proactive announcement'));
-    if (rejectFetch) {
-      expect(warn).toHaveBeenCalledWith(
-        '[mia] Failed to fetch channel mia-channel:',
-        expect.any(Error),
-      );
-    }
-    expect(saveConfig).not.toHaveBeenCalled();
-  });
+      expect(result.chapters).toEqual([]);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('skipping proactive announcement'));
+      if (rejectFetch) {
+        expect(warn).toHaveBeenCalledWith(
+          '[mia] Failed to fetch channel mia-channel:',
+          expect.any(Error),
+        );
+      }
+      expect(saveConfig).not.toHaveBeenCalled();
+    },
+  );
 
   it('serializes concurrent checks so a poll and /mia cannot double-post', async () => {
     let currentConfig = makeConfig({ latestChapter: 74 });
@@ -329,9 +354,7 @@ describe('checkAndAnnounceMia (proactive mode)', () => {
   });
 
   it('recovers the serialization lock after an error', async () => {
-    getLatestChapters
-      .mockRejectedValueOnce(new Error('transient 503'))
-      .mockResolvedValueOnce([]);
+    getLatestChapters.mockRejectedValueOnce(new Error('transient 503')).mockResolvedValueOnce([]);
 
     const client = makeFakeClient();
     await expect(mia.checkAndAnnounceMia(client)).rejects.toThrow('transient 503');
@@ -421,9 +444,10 @@ describe('startMiaPoller', () => {
 
     let resolveFetch!: () => void;
     getLatestChapters.mockImplementationOnce(
-      () => new Promise<MangaDexChapter[]>((resolve) => {
-        resolveFetch = () => resolve([]);
-      }),
+      () =>
+        new Promise<MangaDexChapter[]>((resolve) => {
+          resolveFetch = () => resolve([]);
+        }),
     );
 
     const stop = mia.startMiaPoller(makeFakeClient());
@@ -444,10 +468,7 @@ describe('startMiaPoller', () => {
     const stop = mia.startMiaPoller(makeFakeClient());
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(err).toHaveBeenCalledWith(
-      '[mia] Scheduled chapter check failed:',
-      expect.any(Error),
-    );
+    expect(err).toHaveBeenCalledWith('[mia] Scheduled chapter check failed:', expect.any(Error));
     stop();
   });
 });

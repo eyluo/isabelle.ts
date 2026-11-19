@@ -13,7 +13,9 @@ describe('messageCreate (Ozen auto-reply)', () => {
     await execute(message as any);
     expect(message.reply).toHaveBeenCalledOnce();
     expect(message.reply).toHaveBeenCalledWith(expect.stringContaining('<@user>'));
-    expect(message.reply).toHaveBeenCalledWith(expect.stringContaining('Ozen the Immovable Sovereign'));
+    expect(message.reply).toHaveBeenCalledWith(
+      expect.stringContaining('Ozen the Immovable Sovereign'),
+    );
   });
 
   it.each([

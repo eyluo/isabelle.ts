@@ -9,7 +9,7 @@ export const CONFIG_PATH = path.resolve(__dirname, '..', '.env.json');
 /** Reads and parses the .env.json config file. */
 export function loadConfig(configPath: string = CONFIG_PATH): BotConfig {
   const raw = fs.readFileSync(configPath, 'utf-8');
-  return JSON.parse(raw);
+  return JSON.parse(raw) as BotConfig;
 }
 
 /**

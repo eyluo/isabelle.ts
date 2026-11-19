@@ -2,12 +2,12 @@
 
 The mediamigos Discord bot (now in TypeScript!).
 
-| Command | What it does |
-|---|---|
-| `/ping` | Replies "Pong!" |
-| `/hello` | Placeholder, replies "hello!" |
-| `/mia` | Checks MangaDex for new Made in Abyss chapters; posts the link + opens a discussion thread for mainline chapters, sends an FYI for extra chapters, and remembers progress (also runs proactively once a day) |
-| *(auto)* | Anyone who says "Ozen" without her full title gets corrected |
+| Command  | What it does                                                                                                                                                                                                 |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/ping`  | Replies "Pong!"                                                                                                                                                                                              |
+| `/hello` | Placeholder, replies "hello!"                                                                                                                                                                                |
+| `/mia`   | Checks MangaDex for new Made in Abyss chapters; posts the link + opens a discussion thread for mainline chapters, sends an FYI for extra chapters, and remembers progress (also runs proactively once a day) |
+| _(auto)_ | Anyone who says "Ozen" without her full title gets corrected                                                                                                                                                 |
 
 ## Setup
 
@@ -21,16 +21,17 @@ Create `.env.json` in the project root (it is git-ignored):
 
 ```json
 {
-    "auth": {
-        "discord": { "token": "…", "clientID": "…", "guildID": "…" }
-    },
-    "data": {
-        "madeInAbyss": { "channelID": "…", "latestChapter": 75 }
-    }
+  "auth": {
+    "discord": { "token": "…", "clientID": "…", "guildID": "…" }
+  },
+  "data": {
+    "madeInAbyss": { "channelID": "…", "latestChapter": 75 }
+  }
 }
 ```
 
 Optional fields under `data.madeInAbyss`:
+
 - `pollIntervalHours` — how often to proactively check MangaDex (defaults to `24`; set to `0` to disable)
 - `mangaID` — MangaDex manga UUID (defaults to Made in Abyss)
 
@@ -39,15 +40,20 @@ In the [Discord Developer Portal](https://discord.com/developers/applications), 
 
 ## Scripts
 
-| Script | Purpose |
-|---|---|
-| `npm run build` | Compile TypeScript → `dist/` |
-| `npm start` | Run the bot (build first) |
-| `npm run dev` | Build + run |
-| `npm run deploy` | Register slash commands with your guild |
-| `npm test` | Build + run all tests |
-| `npm run test:watch` | Re-run tests on change |
+| Script                  | Purpose                                         |
+| ----------------------- | ----------------------------------------------- |
+| `npm run build`         | Compile TypeScript → `dist/`                    |
+| `npm start`             | Run the bot (build first)                       |
+| `npm run dev`           | Build + run                                     |
+| `npm run deploy`        | Register slash commands with your guild         |
+| `npm test`              | Build + run all tests                           |
+| `npm run test:watch`    | Re-run tests on change                          |
 | `npm run test:coverage` | Tests + coverage report (`coverage/index.html`) |
+| `npm run lint`          | Run ESLint (type-aware on `src/`)               |
+| `npm run lint:fix`      | Run ESLint with auto-fix                        |
+| `npm run format`        | Format files with Prettier                      |
+| `npm run format:check`  | Verify Prettier formatting                      |
+| `npm run check`         | Run lint + format check + build + tests         |
 
 ## Adding a command
 
@@ -56,9 +62,7 @@ Drop a file in `src/commands/` — it's discovered automatically:
 ```ts
 import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
 
-export const data = new SlashCommandBuilder()
-  .setName('roll')
-  .setDescription('Roll a die');
+export const data = new SlashCommandBuilder().setName('roll').setDescription('Roll a die');
 
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   await interaction.reply(`🎲 ${Math.floor(Math.random() * 6) + 1}`);
@@ -87,7 +91,7 @@ deploying, in a private test server:
 
 1. `npm run deploy` → "Successfully registered N application commands."
 2. `npm run dev` → "isabelle.ts is ready to roll! Logged in as …"
-3. `/ping` → "Pong!"  ·  `/hello` → "hello!"
+3. `/ping` → "Pong!" · `/hello` → "hello!"
 4. Say "ozen" → corrected; say "Ozen the Immovable Sovereign" → no reply
 5. `/mia` → "Chapter N is not available yet..." (or, if out, link + new thread
    in the configured channel, and `latestChapter` bumped in `.env.json`)
