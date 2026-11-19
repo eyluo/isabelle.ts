@@ -1,45 +1,29 @@
-import { ChannelType, ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
-import { loadConfig, saveConfig } from '../config';
-import { getSticky } from '../util/reddit';
+import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
+import { checkAndAnnounceMia, chunkMessages, formatChapterAnnouncement } from '../util/mia';
 
 export const data = new SlashCommandBuilder()
   .setName('mia')
   .setDescription('Checks on the newest chapter of Made in Abyss');
 
 /**
- * Checks if any stickied posts on r/MadeInAbyss contain the next
- * chapter number. If found, posts a link and creates a discussion thread.
+ * Checks MangaDex for the next mainline chapter of Made in Abyss.
+ * If found, posts a link, opens a discussion thread, and persists the chapter number.
  */
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
-  // Reddit calls can exceed Discord's 3-second reply window, so defer first.
+  // External API calls can exceed Discord's 3-second reply window, so defer first.
   await interaction.deferReply();
 
-  const config = loadConfig();
-  const chapterToCheck = config.data.madeInAbyss.latestChapter;
+  const { expectedChapter, chapters } = await checkAndAnnounceMia(interaction.client, {
+    onAnnounce: async (found) => {
+      const chunks = chunkMessages(found.map(formatChapterAnnouncement));
+      await interaction.editReply({ content: chunks[0], allowedMentions: { parse: [] } });
+      for (const chunk of chunks.slice(1)) {
+        await interaction.followUp({ content: chunk, allowedMentions: { parse: [] } });
+      }
+    },
+  });
 
-  for (const slot of [1, 2] as const) {
-    const stickyPost = await getSticky('MadeInAbyss', slot);
-    if (!stickyPost?.title.includes(chapterToCheck.toString())) continue;
-
-    await interaction.editReply(
-      `Chapter ${chapterToCheck} available! Link here: ${stickyPost.url}`
-    );
-
-    // Create a discussion thread in the designated channel
-    const miaChannel = interaction.guild?.channels.cache.get(
-      config.data.madeInAbyss.channelID
-    );
-    if (miaChannel?.type === ChannelType.GuildText) {
-      await miaChannel.threads.create({
-        name: `Made in Abyss Chapter ${chapterToCheck} Discussion`,
-      });
-    }
-
-    // Persist the updated chapter number
-    config.data.madeInAbyss.latestChapter++;
-    saveConfig(config);
-    return;
+  if (chapters.length === 0) {
+    await interaction.editReply(`Chapter ${expectedChapter} is not available yet...`);
   }
-
-  await interaction.editReply(`Chapter ${chapterToCheck} is not available yet...`);
 }

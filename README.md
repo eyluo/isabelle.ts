@@ -6,7 +6,7 @@ The mediamigos Discord bot (now in TypeScript!).
 |---|---|
 | `/ping` | Replies "Pong!" |
 | `/hello` | Placeholder, replies "hello!" |
-| `/mia` | Checks r/MadeInAbyss stickies for the next chapter; if it's out, posts the link, opens a discussion thread and remembers the new chapter number |
+| `/mia` | Checks MangaDex for the next mainline chapter of Made in Abyss; if it's out, posts the link, opens a discussion thread, and remembers the new chapter number (also runs proactively once a day) |
 | *(auto)* | Anyone who says "Ozen" without her full title gets corrected |
 
 ## Setup
@@ -22,14 +22,17 @@ Create `.env.json` in the project root (it is git-ignored):
 ```json
 {
     "auth": {
-        "discord": { "token": "…", "clientID": "…", "guildID": "…" },
-        "reddit": { "clientID": "…", "clientSecret": "…", "userAgent": "isabelle.ts discord bot" }
+        "discord": { "token": "…", "clientID": "…", "guildID": "…" }
     },
     "data": {
-        "madeInAbyss": { "channelID": "…", "latestChapter": 62 }
+        "madeInAbyss": { "channelID": "…", "latestChapter": 75 }
     }
 }
 ```
+
+Optional fields under `data.madeInAbyss`:
+- `pollIntervalHours` — how often to proactively check MangaDex (defaults to `24`; set to `0` to disable)
+- `mangaID` — MangaDex manga UUID (defaults to Made in Abyss)
 
 In the [Discord Developer Portal](https://discord.com/developers/applications), enable
 **Bot → Privileged Gateway Intents → Message Content Intent** (needed for the Ozen reply).
@@ -71,7 +74,7 @@ Then `npm run deploy` to register it. Events work the same way in `src/events/`
   discord.js objects (see `test/helpers.ts`). No network, no login.
 - **Integration** (`test/integration/`): the loaders against the built `dist/`,
   slash command JSON validity, `.env.json` read/write on a temp file, and the
-  Reddit client against a stubbed `fetch`.
+  MangaDex client against a stubbed `fetch`.
 
 When adding a command, add a test next to the others in `test/unit/`; the
 loader test will also fail until its expected command list is updated.
