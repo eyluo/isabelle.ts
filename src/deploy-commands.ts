@@ -28,4 +28,7 @@ rest.put(
   { body: commands }
 )
   .then(() => console.log(`Successfully registered ${commands.length} application commands.`))
-  .catch(console.error);
+  .catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });

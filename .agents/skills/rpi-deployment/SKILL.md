@@ -34,7 +34,7 @@ description: >-
 ## Deployment Steps
 
 1. Clone the repo: `git clone <repo-url> ~/isabelle.ts && cd ~/isabelle.ts`
-2. Install deps: `npm install` (dev deps are needed to build)
+2. Install deps: `npm ci` (dev deps are needed to build; use `npm ci` for repeatable installs)
 3. Create `.env.json` with fresh credentials (never reuse leaked tokens)
 4. Verify: `npm test` — all tests should pass (this also builds `dist/`)
 5. Register commands: `npm run deploy`
@@ -49,6 +49,7 @@ Create `/etc/systemd/system/isabelle.service`:
 Description=Isabelle Discord Bot
 After=network-online.target
 Wants=network-online.target
+ConditionPathExists=/home/pi/isabelle.ts/.env.json
 
 [Service]
 Type=simple
@@ -64,20 +65,69 @@ StandardError=journal
 WantedBy=multi-user.target
 ```
 
-Enable and start:
+Enable and start (once `.env.json` exists):
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable isabelle.service
 sudo systemctl start isabelle.service
 ```
 
+## Auto-Updates (systemd Timer)
+
+The repo includes a host-agnostic updater at `scripts/update.sh` (supports `--force` to rebuild/redeploy even when `HEAD` matches upstream). Configure host-specific behavior via environment variables:
+
+- `ISABELLE_REMOTE` (default: `origin`)
+- `ISABELLE_BRANCH` (default: `master`)
+- `ISABELLE_RESTART_CMD` (optional; skipped if unset)
+- `ISABELLE_BACKUP_DIR` (optional; backs up `.env.json` before updates, keeping the newest 10)
+
+Create `/etc/systemd/system/isabelle-update.service`:
+
+```ini
+[Unit]
+Description=Update Isabelle Discord Bot from Git
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/home/pi/isabelle.ts
+Environment="ISABELLE_RESTART_CMD=sudo -n systemctl try-restart isabelle.service"
+Environment="ISABELLE_BACKUP_DIR=/home/pi/.local/share/isabelle-backups"
+ExecStart=/home/pi/isabelle.ts/scripts/update.sh
+StandardOutput=journal
+StandardError=journal
+```
+
+Create `/etc/systemd/system/isabelle-update.timer` (daily at 3:00 AM local time):
+
+```ini
+[Unit]
+Description=Daily update check for Isabelle Discord Bot
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+RandomizedDelaySec=5m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+Enable the timer:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now isabelle-update.timer
+```
+
 ## Monitoring & Maintenance
 
 - **Logs**: `journalctl -u isabelle.service -f`
+- **Update logs**: `journalctl -u isabelle-update.service -n 50 --no-pager`
 - **Restart**: `sudo systemctl restart isabelle.service`
-- **Update**: `git pull && npm install && npm test && sudo systemctl restart isabelle.service`
-  (`npm test` rebuilds `dist/` and stops the chain before restarting if anything fails)
-- **Stateful data**: `.env.json` stores `latestChapter` — back up periodically
+- **Manual update**: `sudo systemctl start isabelle-update.service` (or `ISABELLE_RESTART_CMD="sudo -n systemctl try-restart isabelle.service" ~/isabelle.ts/scripts/update.sh`)
+- **Stateful data**: `.env.json` stores `latestChapter` — back up periodically (the updater also saves copies in `ISABELLE_BACKUP_DIR`)
 
 ## Security Notes
 
