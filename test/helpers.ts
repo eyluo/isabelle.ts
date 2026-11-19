@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { BotConfig } from '../src/types';
+import type { BotConfig, BotState, MadeInAbyssState } from '../src/types';
 
 /**
  * Shared test fixtures. discord.js objects are replaced by small fakes that
@@ -12,7 +12,18 @@ export function makeConfig(overrides: Partial<BotConfig['data']['madeInAbyss']> 
       discord: { token: 'fake-token', clientID: 'client-1', guildID: 'guild-1' },
     },
     data: {
-      madeInAbyss: { channelID: 'mia-channel', latestChapter: 74, ...overrides },
+      madeInAbyss: { channelID: 'mia-channel', ...overrides },
+    },
+  };
+}
+
+export function makeState(overrides: Partial<MadeInAbyssState> = {}): BotState {
+  return {
+    version: 1,
+    madeInAbyss: {
+      latestChapter: 74,
+      announcedExtras: [],
+      ...overrides,
     },
   };
 }

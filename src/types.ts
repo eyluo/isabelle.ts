@@ -33,7 +33,7 @@ export interface BotEvent {
   execute: (...args: any[]) => void | Promise<void>;
 }
 
-/** Shape of the .env.json configuration file. */
+/** Shape of the read-only .env.json configuration file. */
 export interface BotConfig {
   auth: {
     discord: {
@@ -45,15 +45,30 @@ export interface BotConfig {
   data: {
     madeInAbyss: {
       channelID: string;
-      latestChapter: number;
-      /** Non-integer / extra chapter numbers already announced with an FYI message. */
-      announcedExtras?: number[];
       /** MangaDex manga UUID (defaults to Made in Abyss). */
       mangaID?: string;
       /** Background polling interval in hours (defaults to 24; set to 0 to disable). */
       pollIntervalHours?: number;
+      /** @deprecated Migrated to state.json on first run. */
+      latestChapter?: number;
+      /** @deprecated Migrated to state.json on first run. */
+      announcedExtras?: number[];
     };
   };
+}
+
+/** Mutable Made in Abyss progress state stored in state.json. */
+export interface MadeInAbyssState {
+  /** Next mainline integer chapter number to check for (1-based). */
+  latestChapter: number;
+  /** Non-integer / extra chapter numbers already announced with an FYI message. */
+  announcedExtras: number[];
+}
+
+/** Shape of the git-ignored state.json runtime state file. */
+export interface BotState {
+  version: 1;
+  madeInAbyss: MadeInAbyssState;
 }
 
 /** Extended Discord Client that carries the typed command collection. */
