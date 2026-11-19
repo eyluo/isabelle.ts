@@ -6,7 +6,7 @@ The mediamigos Discord bot (now in TypeScript!).
 |---|---|
 | `/ping` | Replies "Pong!" |
 | `/hello` | Placeholder, replies "hello!" |
-| `/mia` | Checks MangaDex for the next mainline chapter of Made in Abyss; if it's out, posts the link, opens a discussion thread, and remembers the new chapter number (also runs proactively once a day) |
+| `/mia` | Checks MangaDex for new Made in Abyss chapters; posts the link + opens a discussion thread for mainline chapters, sends an FYI for extra chapters, and remembers progress (also runs proactively once a day) |
 | *(auto)* | Anyone who says "Ozen" without her full title gets corrected |
 
 ## Setup

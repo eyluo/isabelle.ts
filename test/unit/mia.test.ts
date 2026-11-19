@@ -142,19 +142,64 @@ describe('/mia', () => {
     });
   });
 
-  it('reports not available (and saves nothing) when only older or non-integer chapters exist', async () => {
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+  it('sends an FYI without opening a thread for new non-integer chapters, and persists announcedExtras', async () => {
+    loadConfig.mockReturnValue(makeConfig({ latestChapter: 75 }));
     getLatestChapters.mockResolvedValue([
       chapter(74.5, { title: 'Volume Extras' }),
-      chapter(73, { title: 'Message' }),
+      chapter(74, { title: 'Just that' }),
+    ]);
+    const channel = makeMiaChannel();
+    const interaction = makeInteraction({ channels: new Map([['mia-channel', channel]]) });
+
+    await execute(interaction as any);
+
+    expect(interaction.editReply).toHaveBeenCalledExactlyOnceWith({
+      content: 'FYI: Extra chapter 74.5 (Volume Extras) available! Link here: https://mangadex.org/chapter/id-74.5',
+      allowedMentions: { parse: [] },
+    });
+    expect(channel.threads.create).not.toHaveBeenCalled();
+    expect(saveConfig).toHaveBeenCalledOnce();
+    expect(saveConfig.mock.calls[0][0].data.madeInAbyss.latestChapter).toBe(75);
+    expect(saveConfig.mock.calls[0][0].data.madeInAbyss.announcedExtras).toEqual([74.5]);
+  });
+
+  it('announces mainline + extra chapters together in /mia but only opens threads for mainline', async () => {
+    getLatestChapters.mockResolvedValue([
+      chapter(74.5, { title: 'Volume Extras' }),
+      chapter(74, { title: 'Just that' }),
+    ]);
+    const channel = makeMiaChannel();
+    const interaction = makeInteraction({ channels: new Map([['mia-channel', channel]]) });
+
+    await execute(interaction as any);
+
+    expect(interaction.editReply).toHaveBeenCalledExactlyOnceWith({
+      content: [
+        'Chapter 74 (Just that) available! Link here: https://mangadex.org/chapter/id-74',
+        'FYI: Extra chapter 74.5 (Volume Extras) available! Link here: https://mangadex.org/chapter/id-74.5',
+      ].join('\n'),
+      allowedMentions: { parse: [] },
+    });
+    expect(channel.threads.create).toHaveBeenCalledExactlyOnceWith({
+      name: 'Made in Abyss Chapter 74 Discussion',
+    });
+    expect(saveConfig).toHaveBeenCalledOnce();
+    expect(saveConfig.mock.calls[0][0].data.madeInAbyss.latestChapter).toBe(75);
+    expect(saveConfig.mock.calls[0][0].data.madeInAbyss.announcedExtras).toEqual([74.5]);
+  });
+
+  it('reports not available (and saves nothing) when only older or already-announced extra chapters exist', async () => {
+    loadConfig.mockReturnValue(makeConfig({ latestChapter: 75, announcedExtras: [74.5] }));
+    getLatestChapters.mockResolvedValue([
+      chapter(74.5, { title: 'Volume Extras' }),
+      chapter(74, { title: 'Just that' }),
     ]);
     const interaction = makeInteraction();
 
     await execute(interaction as any);
 
-    expect(interaction.editReply).toHaveBeenCalledExactlyOnceWith('Chapter 74 is not available yet...');
+    expect(interaction.editReply).toHaveBeenCalledExactlyOnceWith('Chapter 75 is not available yet...');
     expect(saveConfig).not.toHaveBeenCalled();
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('Non-integer chapter 74.5'));
   });
 
   it.each([

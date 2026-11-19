@@ -172,29 +172,81 @@ describe('checkAndAnnounceMia (proactive mode)', () => {
     });
   });
 
-  it('logs newer non-integer chapters once per process run and ignores older ones', async () => {
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
-    loadConfig.mockReturnValue(makeConfig({ latestChapter: 75 }));
+  it('sends FYI messages (no threads) for newer non-integer chapters, persists announcedExtras, and skips already-announced ones', async () => {
+    let currentConfig = makeConfig({ latestChapter: 75 });
+    loadConfig.mockImplementation(() => structuredClone(currentConfig));
+    saveConfig.mockImplementation((next) => {
+      currentConfig = structuredClone(next);
+    });
+
     getLatestChapters.mockResolvedValue([
-      chapter(74.5, { id: 'extra-74-5', title: 'Volume Extras' }),
       chapter(74.7, { id: 'extra-74-7', title: null }),
+      chapter(74.5, { id: 'extra-74-5-later', title: 'Volume Extras', publishAt: '2026-08-22T00:00:00Z' }),
+      chapter(74.5, { id: 'extra-74-5', title: 'Volume Extras', publishAt: '2026-08-21T07:23:29Z' }),
       chapter(73.5, { id: 'old-extra', title: 'Old Extra' }),
     ]);
     const channel = makeTextChannel();
     const client = makeFakeClient(channel);
 
     await mia.checkAndAnnounceMia(client);
+    // Second check (simulating next poll or restart) must not re-send.
     await mia.checkAndAnnounceMia(client);
 
-    expect(channel.send).not.toHaveBeenCalled();
-    expect(saveConfig).not.toHaveBeenCalled();
-    expect(log).toHaveBeenCalledTimes(2);
-    expect(log).toHaveBeenCalledWith(
-      '[mia] Non-integer chapter 74.5 (Volume Extras) found: https://mangadex.org/chapter/id-74.5',
+    expect(channel.send).toHaveBeenCalledTimes(2);
+    expect(channel.send).toHaveBeenNthCalledWith(1, {
+      content: 'FYI: Extra chapter 74.5 (Volume Extras) available! Link here: https://mangadex.org/chapter/id-74.5',
+      allowedMentions: { parse: [] },
+    });
+    expect(channel.send).toHaveBeenNthCalledWith(2, {
+      content: 'FYI: Extra chapter 74.7 available! Link here: https://mangadex.org/chapter/id-74.7',
+      allowedMentions: { parse: [] },
+    });
+    expect(channel.threads.create).not.toHaveBeenCalled();
+    expect(currentConfig.data.madeInAbyss.latestChapter).toBe(75);
+    expect(currentConfig.data.madeInAbyss.announcedExtras).toEqual([74.5, 74.7]);
+  });
+
+  it('prunes obsolete announcedExtras once a newer mainline chapter releases', async () => {
+    let currentConfig = makeConfig({
+      latestChapter: 75,
+      announcedExtras: [74.5, 74.7],
+    });
+    loadConfig.mockImplementation(() => structuredClone(currentConfig));
+    saveConfig.mockImplementation((next) => {
+      currentConfig = structuredClone(next);
+    });
+
+    getLatestChapters.mockResolvedValue([
+      chapter(75, { title: 'New Mainline' }),
+      chapter(74.7, { title: 'Extra' }),
+      chapter(74.5, { title: 'Volume Extras' }),
+    ]);
+    const channel = makeTextChannel();
+
+    await mia.checkAndAnnounceMia(makeFakeClient(channel));
+
+    expect(channel.send).toHaveBeenCalledExactlyOnceWith({
+      content: 'Chapter 75 (New Mainline) available! Link here: https://mangadex.org/chapter/id-75',
+      allowedMentions: { parse: [] },
+    });
+    expect(channel.threads.create).toHaveBeenCalledExactlyOnceWith({
+      name: 'Made in Abyss Chapter 75 Discussion',
+    });
+    expect(currentConfig.data.madeInAbyss.latestChapter).toBe(76);
+    expect(currentConfig.data.madeInAbyss.announcedExtras).toBeUndefined();
+  });
+
+  it('ignores malformed announcedExtras values in config', async () => {
+    loadConfig.mockReturnValue(
+      makeConfig({ latestChapter: 75, announcedExtras: 'bad' as any }),
     );
-    expect(log).toHaveBeenCalledWith(
-      '[mia] Non-integer chapter 74.7 found: https://mangadex.org/chapter/id-74.7',
-    );
+    getLatestChapters.mockResolvedValue([chapter(74.5, { title: 'Volume Extras' })]);
+    const channel = makeTextChannel();
+
+    await mia.checkAndAnnounceMia(makeFakeClient(channel));
+
+    expect(channel.send).toHaveBeenCalledOnce();
+    expect(saveConfig.mock.calls[0][0].data.madeInAbyss.announcedExtras).toEqual([74.5]);
   });
 
   it.each([
