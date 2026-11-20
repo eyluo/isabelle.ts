@@ -58,7 +58,7 @@ export async function getLatestChapters(
   params.set('includeFutureUpdates', '0');
 
   const encodedID = encodeURIComponent(mangaID.trim());
-  const res = await fetch(`${API_BASE}/manga/${encodedID}/feed?${params}`, {
+  const res = await fetch(`${API_BASE}/manga/${encodedID}/feed?${params.toString()}`, {
     headers: { 'User-Agent': USER_AGENT },
     signal: AbortSignal.timeout(MANGADEX_TIMEOUT_MS),
   });

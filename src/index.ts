@@ -12,4 +12,7 @@ loadCommands(client);
 console.log('Loading events...');
 loadEvents(client);
 
-client.login(config.auth.discord.token);
+client.login(config.auth.discord.token).catch((error: unknown) => {
+  console.error('Failed to log in to Discord:', error);
+  process.exitCode = 1;
+});

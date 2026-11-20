@@ -69,10 +69,7 @@ export function chunkMessages(
   return chunks;
 }
 
-async function fetchMiaTextChannel(
-  client: Client,
-  channelID: string,
-): Promise<TextChannel | null> {
+async function fetchMiaTextChannel(client: Client, channelID: string): Promise<TextChannel | null> {
   try {
     const channel = await client.channels.fetch(channelID);
     return channel?.type === ChannelType.GuildText ? channel : null;
@@ -252,7 +249,7 @@ function resolvePollIntervalHours(raw: unknown): number {
   if (raw === undefined) return DEFAULT_POLL_INTERVAL_HOURS;
   if (typeof raw !== 'number' || !Number.isFinite(raw)) {
     console.warn(
-      `[mia] Invalid pollIntervalHours (${String(raw)}); defaulting to ${DEFAULT_POLL_INTERVAL_HOURS}h.`,
+      `[mia] Invalid pollIntervalHours (${JSON.stringify(raw)}); defaulting to ${DEFAULT_POLL_INTERVAL_HOURS}h.`,
     );
     return DEFAULT_POLL_INTERVAL_HOURS;
   }
@@ -269,9 +266,7 @@ function resolvePollIntervalHours(raw: unknown): number {
  * overflow Node.js's 32-bit timer limit. Returns a stop function.
  */
 export function startMiaPoller(client: Client): () => void {
-  const intervalHours = resolvePollIntervalHours(
-    loadConfig().data.madeInAbyss.pollIntervalHours,
-  );
+  const intervalHours = resolvePollIntervalHours(loadConfig().data.madeInAbyss.pollIntervalHours);
 
   if (intervalHours <= 0) {
     console.log('[mia] Proactive chapter polling is disabled.');

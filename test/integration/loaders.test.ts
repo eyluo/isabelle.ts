@@ -61,8 +61,14 @@ describe('loadEvents', () => {
   });
 
   it('fires `once` handlers a single time and `on` handlers every time', () => {
-    writeModule('a.js', `exports.name = 'testOnce'; exports.once = true; exports.execute = (x) => globalThis.__calls.push('once:' + x);`);
-    writeModule('b.js', `exports.name = 'testOn'; exports.execute = (x) => globalThis.__calls.push('on:' + x);`);
+    writeModule(
+      'a.js',
+      `exports.name = 'testOnce'; exports.once = true; exports.execute = (x) => globalThis.__calls.push('once:' + x);`,
+    );
+    writeModule(
+      'b.js',
+      `exports.name = 'testOn'; exports.execute = (x) => globalThis.__calls.push('on:' + x);`,
+    );
     const calls: string[] = [];
     (globalThis as any).__calls = calls;
 
@@ -88,7 +94,8 @@ describe('loadEvents', () => {
 });
 
 describe('slash command definitions (what `npm run deploy` sends)', () => {
-  const commands = fs.readdirSync(path.join(DIST, 'commands'))
+  const commands = fs
+    .readdirSync(path.join(DIST, 'commands'))
     .filter((f) => f.endsWith('.js'))
     .map((f) => require(path.join(DIST, 'commands', f)).data.toJSON());
 

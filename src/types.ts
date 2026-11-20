@@ -14,10 +14,7 @@ import {
  * `data` and `execute`. It will be auto-discovered at startup.
  */
 export interface Command {
-  data:
-    | SlashCommandBuilder
-    | SlashCommandOptionsOnlyBuilder
-    | SlashCommandSubcommandsOnlyBuilder;
+  data: SlashCommandBuilder | SlashCommandOptionsOnlyBuilder | SlashCommandSubcommandsOnlyBuilder;
   execute: (interaction: ChatInputCommandInteraction) => Promise<void>;
 }
 
@@ -30,7 +27,7 @@ export interface Command {
 export interface BotEvent {
   name: string;
   once?: boolean;
-  execute: (...args: any[]) => void | Promise<void>;
+  execute: (...args: unknown[]) => void | Promise<void>;
 }
 
 /** Shape of the .env.json configuration file. */

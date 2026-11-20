@@ -44,7 +44,9 @@ describe('interactionCreate', () => {
 
   it('replies with an ephemeral error when a command throws before replying', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    const interaction = withCommand(async () => { throw new Error('boom'); });
+    const interaction = withCommand(async () => {
+      throw new Error('boom');
+    });
 
     await execute(interaction as any);
 

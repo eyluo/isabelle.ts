@@ -13,12 +13,14 @@ export function loadCommands(
   client: IsabelleClient,
   commandsDir: string = path.join(__dirname, '..', 'commands'),
 ): void {
-  const commandFiles = fs.readdirSync(commandsDir)
-    .filter(file => file.endsWith('.js') && !file.endsWith('.d.ts'));
+  const commandFiles = fs
+    .readdirSync(commandsDir)
+    .filter((file) => file.endsWith('.js') && !file.endsWith('.d.ts'));
 
   for (const file of commandFiles) {
     // Typed as Partial: a dynamically required file may not satisfy the contract.
-    const command: Partial<Command> = require(path.join(commandsDir, file));
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const command = require(path.join(commandsDir, file)) as Partial<Command>;
 
     if (command.data && command.execute) {
       client.commands.set(command.data.name, command as Command);

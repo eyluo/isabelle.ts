@@ -13,21 +13,28 @@ export function loadEvents(
   client: Client,
   eventsDir: string = path.join(__dirname, '..', 'events'),
 ): void {
-  const eventFiles = fs.readdirSync(eventsDir)
-    .filter(file => file.endsWith('.js') && !file.endsWith('.d.ts'));
+  const eventFiles = fs
+    .readdirSync(eventsDir)
+    .filter((file) => file.endsWith('.js') && !file.endsWith('.d.ts'));
 
   for (const file of eventFiles) {
-    const event: BotEvent = require(path.join(eventsDir, file));
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const event = require(path.join(eventsDir, file)) as Partial<BotEvent>;
 
     if (!event.name || !event.execute) {
       console.warn(`  ✗ Skipped event ${file} — missing "name" or "execute" export`);
       continue;
     }
 
+    const execute = event.execute;
     if (event.once) {
-      client.once(event.name, (...args) => event.execute(...args));
+      client.once(event.name, (...args: unknown[]) => {
+        void execute(...args);
+      });
     } else {
-      client.on(event.name, (...args) => event.execute(...args));
+      client.on(event.name, (...args: unknown[]) => {
+        void execute(...args);
+      });
     }
 
     console.log(`  ✓ Loaded event: ${event.name}${event.once ? ' (once)' : ''}`);

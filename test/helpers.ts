@@ -18,7 +18,9 @@ export function makeConfig(overrides: Partial<BotConfig['data']['madeInAbyss']> 
 }
 
 /** Fake ChatInputCommandInteraction. Tracks replied/deferred like the real one. */
-export function makeInteraction(opts: { commandName?: string; channels?: Map<string, unknown> } = {}) {
+export function makeInteraction(
+  opts: { commandName?: string; channels?: Map<string, unknown> } = {},
+) {
   const channels = opts.channels ?? new Map();
   const interaction = {
     commandName: opts.commandName ?? 'ping',
@@ -32,8 +34,12 @@ export function makeInteraction(opts: { commandName?: string; channels?: Map<str
     },
     guild: { channels: { cache: channels } },
     isChatInputCommand: () => true,
-    reply: vi.fn(async () => { interaction.replied = true; }),
-    deferReply: vi.fn(async () => { interaction.deferred = true; }),
+    reply: vi.fn(async () => {
+      interaction.replied = true;
+    }),
+    deferReply: vi.fn(async () => {
+      interaction.deferred = true;
+    }),
     editReply: vi.fn(async () => {}),
     followUp: vi.fn(async () => {}),
   };

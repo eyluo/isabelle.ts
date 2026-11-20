@@ -17,10 +17,7 @@ vi.mock('../../src/util/mangadex', async (importOriginal) => {
 
 let execute: typeof import('../../src/commands/mia').execute;
 
-const chapter = (
-  num: number,
-  overrides: Partial<MangaDexChapter> = {},
-): MangaDexChapter => ({
+const chapter = (num: number, overrides: Partial<MangaDexChapter> = {}): MangaDexChapter => ({
   id: `id-${num}`,
   chapter: num,
   title: `Title ${num}`,
@@ -59,8 +56,9 @@ describe('/mia', () => {
     await execute(interaction as any);
 
     expect(interaction.deferReply).toHaveBeenCalledOnce();
-    expect(interaction.deferReply.mock.invocationCallOrder[0])
-      .toBeLessThan(getLatestChapters.mock.invocationCallOrder[0]);
+    expect(interaction.deferReply.mock.invocationCallOrder[0]).toBeLessThan(
+      getLatestChapters.mock.invocationCallOrder[0],
+    );
   });
 
   it('announces the chapter with mentions disabled, opens a thread, and bumps latestChapter', async () => {
@@ -105,7 +103,12 @@ describe('/mia', () => {
       expect(payload.content.length).toBeLessThanOrEqual(2000);
       expect(payload.allowedMentions).toEqual({ parse: [] });
     }
-    expect(allPayloads.map((p) => p.content).join('\n').split('\n')).toHaveLength(25);
+    expect(
+      allPayloads
+        .map((p) => p.content)
+        .join('\n')
+        .split('\n'),
+    ).toHaveLength(25);
     expect(saveConfig).toHaveBeenCalledOnce();
     expect(saveConfig.mock.calls[0][0].data.madeInAbyss.latestChapter).toBe(26);
   });
@@ -154,7 +157,8 @@ describe('/mia', () => {
     await execute(interaction as any);
 
     expect(interaction.editReply).toHaveBeenCalledExactlyOnceWith({
-      content: 'FYI: Extra chapter 74.5 (Volume Extras) available! Link here: https://mangadex.org/chapter/id-74.5',
+      content:
+        'FYI: Extra chapter 74.5 (Volume Extras) available! Link here: https://mangadex.org/chapter/id-74.5',
       allowedMentions: { parse: [] },
     });
     expect(channel.threads.create).not.toHaveBeenCalled();
@@ -198,7 +202,9 @@ describe('/mia', () => {
 
     await execute(interaction as any);
 
-    expect(interaction.editReply).toHaveBeenCalledExactlyOnceWith('Chapter 75 is not available yet...');
+    expect(interaction.editReply).toHaveBeenCalledExactlyOnceWith(
+      'Chapter 75 is not available yet...',
+    );
     expect(saveConfig).not.toHaveBeenCalled();
   });
 
