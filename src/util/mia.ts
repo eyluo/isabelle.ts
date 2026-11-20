@@ -1,5 +1,7 @@
 import { ChannelType, Client, TextChannel } from 'discord.js';
-import { loadConfig, saveConfig } from '../config';
+import { loadConfig } from '../config';
+import { loadState, saveState } from '../state';
+import { MadeInAbyssState } from '../types';
 import { getLatestChapters, MADE_IN_ABYSS_MANGA_ID, MangaDexChapter } from './mangadex';
 
 /** Default background check cadence (once per day). */
@@ -100,15 +102,6 @@ function isEarlierPublish(candidate: string, existing: string): boolean {
   return candidateMs < existingMs;
 }
 
-function parseAnnouncedExtras(raw: unknown): Set<number> {
-  if (!Array.isArray(raw)) return new Set();
-  return new Set(
-    raw.filter(
-      (n): n is number => typeof n === 'number' && Number.isFinite(n) && !Number.isInteger(n),
-    ),
-  );
-}
-
 /**
  * Filters a MangaDex chapter feed down to newly released chapters
  * (> nextChapter - 1), deduplicating multiple uploads of the same chapter
@@ -136,19 +129,11 @@ function selectNewChapters(
   return [...byNumber.values()].sort((a, b) => a.chapter - b.chapter);
 }
 
-/** Updates miaConfig.announcedExtras, pruning extras now covered by latestChapter. */
-function setPrunedExtras(
-  miaConfig: { latestChapter: number; announcedExtras?: number[] },
-  announcedExtras: ReadonlySet<number>,
-): void {
-  const remaining = [...announcedExtras]
-    .filter((n) => n > miaConfig.latestChapter - 1)
+/** Updates miaState.announcedExtras, pruning extras now covered by latestChapter. */
+function setPrunedExtras(miaState: MadeInAbyssState, announcedExtras: ReadonlySet<number>): void {
+  miaState.announcedExtras = [...announcedExtras]
+    .filter((n) => n > miaState.latestChapter - 1)
     .sort((a, b) => a - b);
-  if (remaining.length > 0) {
-    miaConfig.announcedExtras = remaining;
-  } else {
-    delete miaConfig.announcedExtras;
-  }
 }
 
 export interface MiaCheckResult {
@@ -169,19 +154,12 @@ export function checkAndAnnounceMia(
   options: { onAnnounce?: (chapters: MangaDexChapter[]) => Promise<void> } = {},
 ): Promise<MiaCheckResult> {
   return serialize(async () => {
-    const config = loadConfig();
-    const miaConfig = config.data.madeInAbyss;
-    const expectedChapter = miaConfig.latestChapter;
+    const miaConfig = loadConfig().data.madeInAbyss;
+    const state = loadState();
+    const miaState = state.madeInAbyss;
+    const expectedChapter = miaState.latestChapter;
 
-    if (
-      typeof expectedChapter !== 'number' ||
-      !Number.isInteger(expectedChapter) ||
-      expectedChapter < 1
-    ) {
-      throw new Error(`Invalid madeInAbyss.latestChapter in config: ${String(expectedChapter)}`);
-    }
-
-    const announcedExtras = parseAnnouncedExtras(miaConfig.announcedExtras);
+    const announcedExtras = new Set(miaState.announcedExtras);
     const mangaID = miaConfig.mangaID ?? MADE_IN_ABYSS_MANGA_ID;
     const feed = await getLatestChapters(mangaID);
     const newChapters = selectNewChapters(feed, expectedChapter, announcedExtras);
@@ -198,13 +176,13 @@ export function checkAndAnnounceMia(
 
       for (const ch of newChapters) {
         if (Number.isInteger(ch.chapter)) {
-          miaConfig.latestChapter = ch.chapter + 1;
+          miaState.latestChapter = ch.chapter + 1;
         } else {
           announcedExtras.add(ch.chapter);
         }
       }
-      setPrunedExtras(miaConfig, announcedExtras);
-      saveConfig(config);
+      setPrunedExtras(miaState, announcedExtras);
+      saveState(state);
 
       if (channel) {
         for (const ch of newChapters) {
@@ -229,14 +207,14 @@ export function checkAndAnnounceMia(
         });
 
         if (Number.isInteger(ch.chapter)) {
-          miaConfig.latestChapter = ch.chapter + 1;
-          setPrunedExtras(miaConfig, announcedExtras);
-          saveConfig(config);
+          miaState.latestChapter = ch.chapter + 1;
+          setPrunedExtras(miaState, announcedExtras);
+          saveState(state);
           await createDiscussionThreadSafely(channel, ch.chapter);
         } else {
           announcedExtras.add(ch.chapter);
-          setPrunedExtras(miaConfig, announcedExtras);
-          saveConfig(config);
+          setPrunedExtras(miaState, announcedExtras);
+          saveState(state);
         }
       }
     }

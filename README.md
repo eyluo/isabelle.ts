@@ -17,7 +17,7 @@ Requires Node.js 22.12+.
 npm install
 ```
 
-Create `.env.json` in the project root (it is git-ignored):
+Create `.env.json` in the project root (git-ignored, read-only at runtime):
 
 ```json
 {
@@ -25,7 +25,7 @@ Create `.env.json` in the project root (it is git-ignored):
     "discord": { "token": "…", "clientID": "…", "guildID": "…" }
   },
   "data": {
-    "madeInAbyss": { "channelID": "…", "latestChapter": 75 }
+    "madeInAbyss": { "channelID": "…" }
   }
 }
 ```
@@ -34,6 +34,18 @@ Optional fields under `data.madeInAbyss`:
 
 - `pollIntervalHours` — how often to proactively check MangaDex (defaults to `24`; set to `0` to disable)
 - `mangaID` — MangaDex manga UUID (defaults to Made in Abyss)
+
+Mutable chapter progress lives in a separate git-ignored `state.json` (copy [`state.example.json`](state.example.json) to `state.json` for a fresh install; existing installs with `data.madeInAbyss.latestChapter` in `.env.json` are migrated automatically on first run):
+
+```json
+{
+  "version": 1,
+  "madeInAbyss": {
+    "latestChapter": 75,
+    "announcedExtras": []
+  }
+}
+```
 
 In the [Discord Developer Portal](https://discord.com/developers/applications), enable
 **Bot → Privileged Gateway Intents → Message Content Intent** (needed for the Ozen reply).
@@ -77,8 +89,8 @@ Then `npm run deploy` to register it. Events work the same way in `src/events/`
 - **Unit** (`test/unit/`): commands and events called directly with small fake
   discord.js objects (see `test/helpers.ts`). No network, no login.
 - **Integration** (`test/integration/`): the loaders against the built `dist/`,
-  slash command JSON validity, `.env.json` read/write on a temp file, and the
-  MangaDex client against a stubbed `fetch`.
+  slash command JSON validity, `.env.json` & `state.json` read/write/migration on
+  temp files, and the MangaDex client against a stubbed `fetch`.
 
 When adding a command, add a test next to the others in `test/unit/`; the
 loader test will also fail until its expected command list is updated.
@@ -94,4 +106,4 @@ deploying, in a private test server:
 3. `/ping` → "Pong!" · `/hello` → "hello!"
 4. Say "ozen" → corrected; say "Ozen the Immovable Sovereign" → no reply
 5. `/mia` → "Chapter N is not available yet..." (or, if out, link + new thread
-   in the configured channel, and `latestChapter` bumped in `.env.json`)
+   in the configured channel, and `latestChapter` bumped in `state.json`)
