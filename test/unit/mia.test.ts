@@ -1,15 +1,17 @@
 import { ChannelType } from 'discord.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MangaDexChapter } from '../../src/util/mangadex';
-import { makeConfig, makeInteraction } from '../helpers';
+import { makeConfig, makeInteraction, makeState } from '../helpers';
 
-const { loadConfig, saveConfig, getLatestChapters } = vi.hoisted(() => ({
+const { loadConfig, loadState, saveState, getLatestChapters } = vi.hoisted(() => ({
   loadConfig: vi.fn(),
-  saveConfig: vi.fn(),
+  loadState: vi.fn(),
+  saveState: vi.fn(),
   getLatestChapters: vi.fn(),
 }));
 
-vi.mock('../../src/config', () => ({ loadConfig, saveConfig }));
+vi.mock('../../src/config', () => ({ loadConfig }));
+vi.mock('../../src/state', () => ({ loadState, saveState }));
 vi.mock('../../src/util/mangadex', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/util/mangadex')>();
   return { ...actual, getLatestChapters };
@@ -42,9 +44,11 @@ describe('/mia', () => {
   beforeEach(async () => {
     vi.resetModules();
     loadConfig.mockReset();
-    saveConfig.mockReset();
+    loadState.mockReset();
+    saveState.mockReset();
     getLatestChapters.mockReset();
-    loadConfig.mockReturnValue(makeConfig({ latestChapter: 74 }));
+    loadConfig.mockReturnValue(makeConfig());
+    loadState.mockReturnValue(makeState({ latestChapter: 74 }));
     ({ execute } = await import('../../src/commands/mia'));
   });
 
@@ -79,13 +83,12 @@ describe('/mia', () => {
     expect(channel.threads.create).toHaveBeenCalledExactlyOnceWith({
       name: 'Made in Abyss Chapter 74 Discussion',
     });
-    expect(saveConfig).toHaveBeenCalledOnce();
-    expect(saveConfig.mock.calls[0][0].data.madeInAbyss.latestChapter).toBe(75);
+    expect(saveState).toHaveBeenCalledOnce();
+    expect(saveState.mock.calls[0][0].madeInAbyss.latestChapter).toBe(75);
   });
 
   it('chunks large catch-up replies across editReply and followUp within 2000 chars', async () => {
-    loadConfig.mockReturnValue(makeConfig({ latestChapter: 1 }));
-    // 25 chapters with ~100-char titles easily exceed Discord's 2000-char limit.
+    loadState.mockReturnValue(makeState({ latestChapter: 1 }));
     const manyChapters = Array.from({ length: 25 }, (_, i) =>
       chapter(i + 1, { title: `Long Chapter Title Number ${i + 1} ${'x'.repeat(60)}` }),
     );
@@ -106,8 +109,8 @@ describe('/mia', () => {
       expect(payload.allowedMentions).toEqual({ parse: [] });
     }
     expect(allPayloads.map((p) => p.content).join('\n').split('\n')).toHaveLength(25);
-    expect(saveConfig).toHaveBeenCalledOnce();
-    expect(saveConfig.mock.calls[0][0].data.madeInAbyss.latestChapter).toBe(26);
+    expect(saveState).toHaveBeenCalledOnce();
+    expect(saveState.mock.calls[0][0].madeInAbyss.latestChapter).toBe(26);
   });
 
   it('persists latestChapter and attempts remaining threads even if thread creation fails', async () => {
@@ -121,8 +124,8 @@ describe('/mia', () => {
 
     await execute(interaction as any);
 
-    expect(saveConfig).toHaveBeenCalledOnce();
-    expect(saveConfig.mock.calls[0][0].data.madeInAbyss.latestChapter).toBe(76);
+    expect(saveState).toHaveBeenCalledOnce();
+    expect(saveState.mock.calls[0][0].madeInAbyss.latestChapter).toBe(76);
     expect(channel.threads.create).toHaveBeenCalledTimes(2);
     expect(err).toHaveBeenCalledWith(
       '[mia] Failed to create discussion thread for chapter 74:',
@@ -143,7 +146,7 @@ describe('/mia', () => {
   });
 
   it('sends an FYI without opening a thread for new non-integer chapters, and persists announcedExtras', async () => {
-    loadConfig.mockReturnValue(makeConfig({ latestChapter: 75 }));
+    loadState.mockReturnValue(makeState({ latestChapter: 75 }));
     getLatestChapters.mockResolvedValue([
       chapter(74.5, { title: 'Volume Extras' }),
       chapter(74, { title: 'Just that' }),
@@ -158,9 +161,11 @@ describe('/mia', () => {
       allowedMentions: { parse: [] },
     });
     expect(channel.threads.create).not.toHaveBeenCalled();
-    expect(saveConfig).toHaveBeenCalledOnce();
-    expect(saveConfig.mock.calls[0][0].data.madeInAbyss.latestChapter).toBe(75);
-    expect(saveConfig.mock.calls[0][0].data.madeInAbyss.announcedExtras).toEqual([74.5]);
+    expect(saveState).toHaveBeenCalledOnce();
+    expect(saveState.mock.calls[0][0].madeInAbyss).toEqual({
+      latestChapter: 75,
+      announcedExtras: [74.5],
+    });
   });
 
   it('announces mainline + extra chapters together in /mia but only opens threads for mainline', async () => {
@@ -183,13 +188,15 @@ describe('/mia', () => {
     expect(channel.threads.create).toHaveBeenCalledExactlyOnceWith({
       name: 'Made in Abyss Chapter 74 Discussion',
     });
-    expect(saveConfig).toHaveBeenCalledOnce();
-    expect(saveConfig.mock.calls[0][0].data.madeInAbyss.latestChapter).toBe(75);
-    expect(saveConfig.mock.calls[0][0].data.madeInAbyss.announcedExtras).toEqual([74.5]);
+    expect(saveState).toHaveBeenCalledOnce();
+    expect(saveState.mock.calls[0][0].madeInAbyss).toEqual({
+      latestChapter: 75,
+      announcedExtras: [74.5],
+    });
   });
 
   it('reports not available (and saves nothing) when only older or already-announced extra chapters exist', async () => {
-    loadConfig.mockReturnValue(makeConfig({ latestChapter: 75, announcedExtras: [74.5] }));
+    loadState.mockReturnValue(makeState({ latestChapter: 75, announcedExtras: [74.5] }));
     getLatestChapters.mockResolvedValue([
       chapter(74.5, { title: 'Volume Extras' }),
       chapter(74, { title: 'Just that' }),
@@ -199,7 +206,7 @@ describe('/mia', () => {
     await execute(interaction as any);
 
     expect(interaction.editReply).toHaveBeenCalledExactlyOnceWith('Chapter 75 is not available yet...');
-    expect(saveConfig).not.toHaveBeenCalled();
+    expect(saveState).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -215,13 +222,13 @@ describe('/mia', () => {
     expect(interaction.editReply).toHaveBeenCalledWith(
       expect.objectContaining({ content: expect.stringContaining('Chapter 74') }),
     );
-    expect(saveConfig).toHaveBeenCalledOnce();
+    expect(saveState).toHaveBeenCalledOnce();
     if (channel) expect(channel.threads.create).not.toHaveBeenCalled();
   });
 
   it('lets MangaDex errors propagate so interactionCreate can report them', async () => {
     getLatestChapters.mockRejectedValue(new Error('MangaDex request failed: 503'));
     await expect(execute(makeInteraction() as any)).rejects.toThrow('503');
-    expect(saveConfig).not.toHaveBeenCalled();
+    expect(saveState).not.toHaveBeenCalled();
   });
 });

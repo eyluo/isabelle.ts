@@ -76,26 +76,33 @@ main() {
     commands_changed="true"
   fi
 
-  # Backup .env.json before pulling/building so runtime state is preserved.
-  if [[ -n "$backup_dir" && -f .env.json ]]; then
-    mkdir -p "$backup_dir"
-    chmod 700 "$backup_dir"
-    local backup_file
-    backup_file="${backup_dir}/env.json.$(date +%Y%m%d-%H%M%S).bak"
-    cp .env.json "$backup_file"
-    chmod 600 "$backup_file"
+  # Backup .env.json and state.json before pulling/building so config & runtime state are preserved.
+  if [[ -n "$backup_dir" ]]; then
+    local stamp
+    stamp="$(date +%Y%m%d-%H%M%S)"
+    for pair in ".env.json:env.json" "state.json:state.json"; do
+      local src="${pair%%:*}"
+      local prefix="${pair##*:}"
+      if [[ -f "$src" ]]; then
+        mkdir -p "$backup_dir"
+        chmod 700 "$backup_dir"
+        local backup_file="${backup_dir}/${prefix}.${stamp}.bak"
+        cp "$src" "$backup_file"
+        chmod 600 "$backup_file"
 
-    shopt -s nullglob
-    local backups=("${backup_dir}"/env.json.*.bak)
-    shopt -u nullglob
-    local count="${#backups[@]}"
-    if [[ "$count" -gt 10 ]]; then
-      rm -f -- "${backups[@]:0:count-10}"
-    fi
+        shopt -s nullglob
+        local backups=("${backup_dir}/${prefix}".*.bak)
+        shopt -u nullglob
+        local count="${#backups[@]}"
+        if [[ "$count" -gt 10 ]]; then
+          rm -f -- "${backups[@]:0:count-10}"
+        fi
+      fi
+    done
   fi
 
   rollback() {
-    # Never run `git clean` here so git-ignored .env.json is never deleted.
+    # Never run `git clean` here so git-ignored .env.json and state.json are never deleted.
     echo "[update] Update failed; rolling back to ${old_sha:0:7}..." >&2
     git reset --hard --quiet "$old_sha"
     if [[ "$lock_changed" == "true" ]]; then

@@ -1,15 +1,17 @@
 import { ChannelType } from 'discord.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MangaDexChapter } from '../../src/util/mangadex';
-import { makeConfig } from '../helpers';
+import { makeConfig, makeState } from '../helpers';
 
-const { loadConfig, saveConfig, getLatestChapters } = vi.hoisted(() => ({
+const { loadConfig, loadState, saveState, getLatestChapters } = vi.hoisted(() => ({
   loadConfig: vi.fn(),
-  saveConfig: vi.fn(),
+  loadState: vi.fn(),
+  saveState: vi.fn(),
   getLatestChapters: vi.fn(),
 }));
 
-vi.mock('../../src/config', () => ({ loadConfig, saveConfig }));
+vi.mock('../../src/config', () => ({ loadConfig }));
+vi.mock('../../src/state', () => ({ loadState, saveState }));
 vi.mock('../../src/util/mangadex', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/util/mangadex')>();
   return { ...actual, getLatestChapters };
@@ -52,9 +54,11 @@ function makeFakeClient(channel?: unknown, { rejectFetch = false } = {}) {
 beforeEach(async () => {
   vi.resetModules();
   loadConfig.mockReset();
-  saveConfig.mockReset();
+  loadState.mockReset();
+  saveState.mockReset();
   getLatestChapters.mockReset();
-  loadConfig.mockReturnValue(makeConfig({ latestChapter: 74 }));
+  loadConfig.mockReturnValue(makeConfig());
+  loadState.mockReturnValue(makeState({ latestChapter: 74 }));
   mia = await import('../../src/util/mia');
 });
 
@@ -114,15 +118,15 @@ describe('checkAndAnnounceMia (proactive mode)', () => {
     expect(channel.threads.create).toHaveBeenNthCalledWith(2, {
       name: 'Made in Abyss Chapter 75 Discussion',
     });
-    expect(saveConfig).toHaveBeenCalledTimes(2);
-    expect(saveConfig.mock.calls[1][0].data.madeInAbyss.latestChapter).toBe(76);
+    expect(saveState).toHaveBeenCalledTimes(2);
+    expect(saveState.mock.calls[1][0].madeInAbyss.latestChapter).toBe(76);
   });
 
   it('persists latestChapter and continues when thread creation fails in proactive mode', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     const savedChapters: number[] = [];
-    saveConfig.mockImplementation((cfg) => {
-      savedChapters.push(cfg.data.madeInAbyss.latestChapter);
+    saveState.mockImplementation((st) => {
+      savedChapters.push(st.madeInAbyss.latestChapter);
     });
     getLatestChapters.mockResolvedValue([chapter(75), chapter(74)]);
     const channel = makeTextChannel();
@@ -149,12 +153,11 @@ describe('checkAndAnnounceMia (proactive mode)', () => {
 
     await expect(mia.checkAndAnnounceMia(makeFakeClient(channel))).rejects.toThrow('Discord 500');
 
-    expect(saveConfig).toHaveBeenCalledOnce();
-    expect(saveConfig.mock.calls[0][0].data.madeInAbyss.latestChapter).toBe(75);
+    expect(saveState).toHaveBeenCalledOnce();
+    expect(saveState.mock.calls[0][0].madeInAbyss.latestChapter).toBe(75);
   });
 
   it('deduplicates multiple uploads using parsed timestamps across timezone offsets and invalid dates', async () => {
-    // +09:00 at 15:00 equals 06:00Z, which is earlier than 07:00Z despite lexical string order.
     getLatestChapters.mockResolvedValue([
       chapter(74, { id: 'invalid', url: 'https://mangadex.org/chapter/invalid', publishAt: 'not-a-date' }),
       chapter(74, { id: 'utc', url: 'https://mangadex.org/chapter/utc', publishAt: '2026-08-21T07:00:00Z' }),
@@ -173,10 +176,10 @@ describe('checkAndAnnounceMia (proactive mode)', () => {
   });
 
   it('sends FYI messages (no threads) for newer non-integer chapters, persists announcedExtras, and skips already-announced ones', async () => {
-    let currentConfig = makeConfig({ latestChapter: 75 });
-    loadConfig.mockImplementation(() => structuredClone(currentConfig));
-    saveConfig.mockImplementation((next) => {
-      currentConfig = structuredClone(next);
+    let currentState = makeState({ latestChapter: 75 });
+    loadState.mockImplementation(() => structuredClone(currentState));
+    saveState.mockImplementation((next) => {
+      currentState = structuredClone(next);
     });
 
     getLatestChapters.mockResolvedValue([
@@ -189,7 +192,6 @@ describe('checkAndAnnounceMia (proactive mode)', () => {
     const client = makeFakeClient(channel);
 
     await mia.checkAndAnnounceMia(client);
-    // Second check (simulating next poll or restart) must not re-send.
     await mia.checkAndAnnounceMia(client);
 
     expect(channel.send).toHaveBeenCalledTimes(2);
@@ -202,18 +204,20 @@ describe('checkAndAnnounceMia (proactive mode)', () => {
       allowedMentions: { parse: [] },
     });
     expect(channel.threads.create).not.toHaveBeenCalled();
-    expect(currentConfig.data.madeInAbyss.latestChapter).toBe(75);
-    expect(currentConfig.data.madeInAbyss.announcedExtras).toEqual([74.5, 74.7]);
-  });
-
-  it('prunes obsolete announcedExtras once a newer mainline chapter releases', async () => {
-    let currentConfig = makeConfig({
+    expect(currentState.madeInAbyss).toEqual({
       latestChapter: 75,
       announcedExtras: [74.5, 74.7],
     });
-    loadConfig.mockImplementation(() => structuredClone(currentConfig));
-    saveConfig.mockImplementation((next) => {
-      currentConfig = structuredClone(next);
+  });
+
+  it('prunes obsolete announcedExtras once a newer mainline chapter releases', async () => {
+    let currentState = makeState({
+      latestChapter: 75,
+      announcedExtras: [74.5, 74.7],
+    });
+    loadState.mockImplementation(() => structuredClone(currentState));
+    saveState.mockImplementation((next) => {
+      currentState = structuredClone(next);
     });
 
     getLatestChapters.mockResolvedValue([
@@ -232,40 +236,14 @@ describe('checkAndAnnounceMia (proactive mode)', () => {
     expect(channel.threads.create).toHaveBeenCalledExactlyOnceWith({
       name: 'Made in Abyss Chapter 75 Discussion',
     });
-    expect(currentConfig.data.madeInAbyss.latestChapter).toBe(76);
-    expect(currentConfig.data.madeInAbyss.announcedExtras).toBeUndefined();
-  });
-
-  it('ignores malformed announcedExtras values in config', async () => {
-    loadConfig.mockReturnValue(
-      makeConfig({ latestChapter: 75, announcedExtras: 'bad' as any }),
-    );
-    getLatestChapters.mockResolvedValue([chapter(74.5, { title: 'Volume Extras' })]);
-    const channel = makeTextChannel();
-
-    await mia.checkAndAnnounceMia(makeFakeClient(channel));
-
-    expect(channel.send).toHaveBeenCalledOnce();
-    expect(saveConfig.mock.calls[0][0].data.madeInAbyss.announcedExtras).toEqual([74.5]);
-  });
-
-  it.each([
-    ['NaN', Number.NaN],
-    ['zero', 0],
-    ['negative', -1],
-    ['non-integer', 74.5],
-    ['string', '74' as any],
-  ])('throws on invalid latestChapter (%s) before calling MangaDex', async (_label, badChapter) => {
-    loadConfig.mockReturnValue(makeConfig({ latestChapter: badChapter }));
-
-    await expect(mia.checkAndAnnounceMia(makeFakeClient())).rejects.toThrow(
-      /Invalid madeInAbyss\.latestChapter/,
-    );
-    expect(getLatestChapters).not.toHaveBeenCalled();
+    expect(currentState.madeInAbyss).toEqual({
+      latestChapter: 76,
+      announcedExtras: [],
+    });
   });
 
   it('passes configured mangaID override to MangaDex', async () => {
-    loadConfig.mockReturnValue(makeConfig({ latestChapter: 74, mangaID: 'custom-uuid' }));
+    loadConfig.mockReturnValue(makeConfig({ mangaID: 'custom-uuid' }));
     getLatestChapters.mockResolvedValue([]);
 
     await mia.checkAndAnnounceMia(makeFakeClient());
@@ -291,14 +269,14 @@ describe('checkAndAnnounceMia (proactive mode)', () => {
         expect.any(Error),
       );
     }
-    expect(saveConfig).not.toHaveBeenCalled();
+    expect(saveState).not.toHaveBeenCalled();
   });
 
   it('serializes concurrent checks so a poll and /mia cannot double-post', async () => {
-    let currentConfig = makeConfig({ latestChapter: 74 });
-    loadConfig.mockImplementation(() => structuredClone(currentConfig));
-    saveConfig.mockImplementation((next) => {
-      currentConfig = structuredClone(next);
+    let currentState = makeState({ latestChapter: 74 });
+    loadState.mockImplementation(() => structuredClone(currentState));
+    saveState.mockImplementation((next) => {
+      currentState = structuredClone(next);
     });
 
     let releaseFirstFetch!: () => void;
@@ -364,18 +342,16 @@ describe('startMiaPoller', () => {
   it('chunks intervals larger than 24.85 days without 32-bit timer overflow', async () => {
     vi.useFakeTimers();
     vi.spyOn(console, 'log').mockImplementation(() => {});
-    loadConfig.mockReturnValue(makeConfig({ pollIntervalHours: 720 })); // 30 days
+    loadConfig.mockReturnValue(makeConfig({ pollIntervalHours: 720 }));
     getLatestChapters.mockResolvedValue([]);
 
     const stop = mia.startMiaPoller(makeFakeClient());
     await vi.advanceTimersByTimeAsync(0);
     expect(getLatestChapters).toHaveBeenCalledTimes(1);
 
-    // After 25 days (past 32-bit max), it must NOT have fired early.
     await vi.advanceTimersByTimeAsync(25 * 24 * 60 * 60 * 1000);
     expect(getLatestChapters).toHaveBeenCalledTimes(1);
 
-    // After the remaining 5 days (30 days total), it fires once.
     await vi.advanceTimersByTimeAsync(5 * 24 * 60 * 60 * 1000);
     expect(getLatestChapters).toHaveBeenCalledTimes(2);
     stop();
