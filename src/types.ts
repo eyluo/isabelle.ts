@@ -46,6 +46,8 @@ export interface BotConfig {
     madeInAbyss: {
       channelID: string;
       latestChapter: number;
+      /** Non-integer / extra chapter numbers already announced with an FYI message. */
+      announcedExtras?: number[];
       /** MangaDex manga UUID (defaults to Made in Abyss). */
       mangaID?: string;
       /** Background polling interval in hours (defaults to 24; set to 0 to disable). */

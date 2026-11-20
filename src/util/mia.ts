@@ -12,10 +12,9 @@ const MAX_TIMEOUT_MS = 2_147_483_647;
 
 /**
  * Serializes chapter checks so a background poll and a manual /mia invocation
- * cannot race, double-post, or overwrite latestChapter.
+ * cannot race, double-post, or overwrite persisted chapter state.
  */
 let pendingCheck: Promise<unknown> = Promise.resolve();
-const loggedExtraIds = new Set<string>();
 
 function serialize<T>(fn: () => Promise<T>): Promise<T> {
   const run = pendingCheck.then(fn, fn);
@@ -26,9 +25,12 @@ function serialize<T>(fn: () => Promise<T>): Promise<T> {
 /**
  * Formats the announcement message for a released chapter, truncating only
  * the chapter title if needed to stay within Discord's 2000-character limit.
+ * Non-integer / extra chapters are formatted as an FYI message.
  */
 export function formatChapterAnnouncement(chapter: MangaDexChapter): string {
-  const prefix = `Chapter ${chapter.chapter}`;
+  const prefix = Number.isInteger(chapter.chapter)
+    ? `Chapter ${chapter.chapter}`
+    : `FYI: Extra chapter ${chapter.chapter}`;
   const suffix = ` available! Link here: ${chapter.url}`;
   if (!chapter.title) return `${prefix}${suffix}`;
 
@@ -101,54 +103,69 @@ function isEarlierPublish(candidate: string, existing: string): boolean {
   return candidateMs < existingMs;
 }
 
+function parseAnnouncedExtras(raw: unknown): Set<number> {
+  if (!Array.isArray(raw)) return new Set();
+  return new Set(
+    raw.filter(
+      (n): n is number => typeof n === 'number' && Number.isFinite(n) && !Number.isInteger(n),
+    ),
+  );
+}
+
 /**
- * Filters a MangaDex chapter feed down to new mainline integer chapters
- * (>= nextChapter, deduplicated and sorted ascending) while logging any
- * newer non-integer chapters (> nextChapter - 1) once per process run.
+ * Filters a MangaDex chapter feed down to newly released chapters
+ * (> nextChapter - 1), deduplicating multiple uploads of the same chapter
+ * number by earliest publishAt and skipping already-announced extra chapters.
+ * Returns mainline and extra chapters together sorted ascending by chapter number.
  */
-function selectNewMainlineChapters(
+function selectNewChapters(
   chapters: MangaDexChapter[],
   nextChapter: number,
+  announcedExtras: ReadonlySet<number>,
 ): MangaDexChapter[] {
-  const mainlineByNumber = new Map<number, MangaDexChapter>();
+  const byNumber = new Map<number, MangaDexChapter>();
 
   for (const ch of chapters) {
     if (ch.chapter <= nextChapter - 1) continue;
+    if (!Number.isInteger(ch.chapter) && announcedExtras.has(ch.chapter)) continue;
 
-    if (!Number.isInteger(ch.chapter)) {
-      if (!loggedExtraIds.has(ch.id)) {
-        loggedExtraIds.add(ch.id);
-        // TODO: Consider sending an FYI message to the channel for non-integer / extra chapters
-        // instead of only logging them.
-        const titlePart = ch.title ? ` (${ch.title})` : '';
-        console.log(`[mia] Non-integer chapter ${ch.chapter}${titlePart} found: ${ch.url}`);
-      }
-      continue;
-    }
-
-    // Both nextChapter and ch.chapter are integers, so ch.chapter > nextChapter - 1 implies ch.chapter >= nextChapter.
     // If multiple scanlation groups uploaded the same chapter, keep the earliest release.
-    const existing = mainlineByNumber.get(ch.chapter);
+    const existing = byNumber.get(ch.chapter);
     if (!existing || isEarlierPublish(ch.publishAt, existing.publishAt)) {
-      mainlineByNumber.set(ch.chapter, ch);
+      byNumber.set(ch.chapter, ch);
     }
   }
 
-  return [...mainlineByNumber.values()].sort((a, b) => a.chapter - b.chapter);
+  return [...byNumber.values()].sort((a, b) => a.chapter - b.chapter);
+}
+
+/** Updates miaConfig.announcedExtras, pruning extras now covered by latestChapter. */
+function setPrunedExtras(
+  miaConfig: { latestChapter: number; announcedExtras?: number[] },
+  announcedExtras: ReadonlySet<number>,
+): void {
+  const remaining = [...announcedExtras]
+    .filter((n) => n > miaConfig.latestChapter - 1)
+    .sort((a, b) => a - b);
+  if (remaining.length > 0) {
+    miaConfig.announcedExtras = remaining;
+  } else {
+    delete miaConfig.announcedExtras;
+  }
 }
 
 export interface MiaCheckResult {
-  /** The chapter number we were checking for before any update. */
+  /** The mainline chapter number we were checking for before any update. */
   expectedChapter: number;
-  /** Newly released mainline integer chapters found (sorted ascending). */
+  /** Newly released chapters found (mainline and extras, sorted ascending). */
   chapters: MangaDexChapter[];
 }
 
 /**
- * Checks MangaDex for new mainline Made in Abyss chapters, announces them
- * (either via the provided reply callback for /mia, or proactively in the
- * configured channel), persists latestChapter immediately after announcement,
- * and opens discussion threads on a best-effort basis.
+ * Checks MangaDex for new Made in Abyss chapters, announces them (either via
+ * the provided reply callback for /mia, or proactively in the configured
+ * channel), persists state immediately after announcement, and opens discussion
+ * threads for mainline integer chapters on a best-effort basis.
  */
 export function checkAndAnnounceMia(
   client: Client,
@@ -167,9 +184,10 @@ export function checkAndAnnounceMia(
       throw new Error(`Invalid madeInAbyss.latestChapter in config: ${String(expectedChapter)}`);
     }
 
+    const announcedExtras = parseAnnouncedExtras(miaConfig.announcedExtras);
     const mangaID = miaConfig.mangaID ?? MADE_IN_ABYSS_MANGA_ID;
     const feed = await getLatestChapters(mangaID);
-    const newChapters = selectNewMainlineChapters(feed, expectedChapter);
+    const newChapters = selectNewChapters(feed, expectedChapter, announcedExtras);
 
     if (newChapters.length === 0) {
       return { expectedChapter, chapters: [] };
@@ -180,12 +198,22 @@ export function checkAndAnnounceMia(
     if (options.onAnnounce) {
       // Interactive (/mia): reply first, persist immediately so thread errors cannot cause double-posts.
       await options.onAnnounce(newChapters);
-      miaConfig.latestChapter = newChapters[newChapters.length - 1].chapter + 1;
+
+      for (const ch of newChapters) {
+        if (Number.isInteger(ch.chapter)) {
+          miaConfig.latestChapter = ch.chapter + 1;
+        } else {
+          announcedExtras.add(ch.chapter);
+        }
+      }
+      setPrunedExtras(miaConfig, announcedExtras);
       saveConfig(config);
 
       if (channel) {
         for (const ch of newChapters) {
-          await createDiscussionThreadSafely(channel, ch.chapter);
+          if (Number.isInteger(ch.chapter)) {
+            await createDiscussionThreadSafely(channel, ch.chapter);
+          }
         }
       }
     } else {
@@ -202,9 +230,17 @@ export function checkAndAnnounceMia(
           content: formatChapterAnnouncement(ch),
           allowedMentions: { parse: [] },
         });
-        miaConfig.latestChapter = ch.chapter + 1;
-        saveConfig(config);
-        await createDiscussionThreadSafely(channel, ch.chapter);
+
+        if (Number.isInteger(ch.chapter)) {
+          miaConfig.latestChapter = ch.chapter + 1;
+          setPrunedExtras(miaConfig, announcedExtras);
+          saveConfig(config);
+          await createDiscussionThreadSafely(channel, ch.chapter);
+        } else {
+          announcedExtras.add(ch.chapter);
+          setPrunedExtras(miaConfig, announcedExtras);
+          saveConfig(config);
+        }
       }
     }
 
